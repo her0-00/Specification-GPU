@@ -191,7 +191,7 @@ ui <- shinyUI(dashboardPage(
                                       choices = quant_vars,  # Liste des variables quantitatives
                                       selected = quant_vars[1]
                                     ),
-                                    plotOutput("histogram")
+                                    plotlyOutput("histogram")
                              ),
                              column(6,
                                     selectInput(
