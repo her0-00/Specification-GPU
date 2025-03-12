@@ -47,16 +47,33 @@ server <- function(input, output, session) {
       write.csv(desc_stats, file)
     }
   )
+
+  # HISTOGRAMME
+  output$histogram <- renderPlotly({
+      req(input$var_quanti)  
+      p <- ggplot(df, aes_string(x = input$var_quanti)) +
+        geom_histogram(binwidth = 10, fill = "blue", color = "black", alpha = 0.7) +
+        labs(
+          title = paste("Histogramme de", input$var_quanti),
+          x = input$var_quanti,
+          y = "Fréquence"
+        ) 
+      ggplotly(p)  # Conversion en graphique interactif
+    })
   
-output$histogram <- renderPlotly({
-    req(input$var_quanti)  
-    p <- ggplot(df, aes_string(x = input$var_quanti)) +
-      geom_histogram(binwidth = 10, fill = "blue", color = "black", alpha = 0.7) +
+  #boxplot
+  output$boxplot <- renderPlotly({
+    req(input$var_quanti)  # Vérification qu'une variable quantitative est choisie
+    
+    # Création du boxplot
+    p <- ggplot(df, aes_string(y = input$var_quanti)) +
+      geom_boxplot(fill = "orange", color = "black", alpha = 0.7) +
       labs(
-        title = paste("Histogramme de", input$var_quanti),
-        x = input$var_quanti,
-        y = "Fréquence"
-      ) 
+        title = paste("Boxplot de", input$var_quanti),
+        y = input$var_quanti
+      ) +
+      theme_minimal()
+    
     ggplotly(p)  # Conversion en graphique interactif
   })
   
