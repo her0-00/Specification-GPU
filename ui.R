@@ -1,4 +1,4 @@
-# Initiation de l'ui -----
+# Initiation de l'UI -----
 ui <- shinyUI(dashboardPage(
   dashboardHeader(title = "Caractérisation des GPU"),
   
@@ -32,8 +32,7 @@ ui <- shinyUI(dashboardPage(
     div(style = "margin-top: 20px; padding: 10px; border-radius: 5px; text-align: center;",
         h4(style = "font-size: 16px;", "Développé par Nathan Avenel | Anas Ibnouali | Yénam Dossou"),
         p(style = "font-size: 13px;", "Étudiants en science des données"),
-        p(style = "font-size: 13px;", "à l'IUT de Vannes"),
-       
+        p(style = "font-size: 13px;", "à l'IUT de Vannes")
     )
   ),
   
@@ -139,18 +138,50 @@ ui <- shinyUI(dashboardPage(
                 )
               )
       ),
+      
       # Deuxième section : Analyses descriptives -----
       tabItem(tabName = "resume",
               fluidRow(
-                column(12,
-                       box(
-                         title = "Analyses descriptives",
-                         status = "primary",
-                         solidHeader = TRUE,
-                         width = NULL,
-                         dataTableOutput("desc_stats"),
-                         downloadButton("downloadData2", "Télécharger les données")
-                       )
+                h2("Analyse des données", class = "centered"),
+                tabsetPanel(
+                  # Onglet des valeurs manquantes
+                  tabPanel("Valeurs manquantes",
+                           fluidRow(
+                             column(12,
+                                    box(
+                                      title = "Analyses descriptives",
+                                      status = "primary",
+                                      solidHeader = TRUE,
+                                      width = NULL,
+                                      dataTableOutput("desc_stats"),
+                                      downloadButton("downloadData2", "Télécharger les données")
+                                    )
+                             )
+                           )
+                  ),
+                  # Onglet des visualisations
+                  tabPanel("Visualisation",
+                           fluidRow(
+                             column(6,
+                                    selectInput(
+                                      inputId = "var_quanti",
+                                      label = "Choisissez une variable quantitative :",
+                                      choices = quant_vars,  # Liste des variables quantitatives
+                                      selected = quant_vars[1]
+                                    ),
+                                    plotOutput("histogram")
+                             ),
+                             column(6,
+                                    selectInput(
+                                      inputId = "var_quali",
+                                      label = "Choisissez une variable qualitative :",
+                                      choices = names(df)[sapply(df, is.factor)],  # Liste des variables qualitatives
+                                      selected = names(df)[sapply(df, is.factor)][1]
+                                    ),
+                                    dataTableOutput("qualitative_table")
+                             )
+                           )
+                  )
                 )
               )
       )
