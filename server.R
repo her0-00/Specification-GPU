@@ -48,13 +48,16 @@ server <- function(input, output, session) {
     }
   )
   
-  # Visualisation des histogrammes
-  output$histogram <- renderPlot({
-    req(input$var_quanti)
-    ggplot(filtered_data(), aes_string(x = input$var_quanti)) +
-      geom_histogram(fill = "blue", color = "black", bins = 30) +
-      labs(title = paste("Histogramme de", input$var_quanti), x = input$var_quanti, y = "Fréquence") +
-      theme_minimal()
+output$histogram <- renderPlotly({
+    req(input$var_quanti)  
+    p <- ggplot(df, aes_string(x = input$var_quanti)) +
+      geom_histogram(binwidth = 10, fill = "blue", color = "black", alpha = 0.7) +
+      labs(
+        title = paste("Histogramme de", input$var_quanti),
+        x = input$var_quanti,
+        y = "Fréquence"
+      ) 
+    ggplotly(p)  # Conversion en graphique interactif
   })
   
   # Visualisation des répartitions qualitatives
