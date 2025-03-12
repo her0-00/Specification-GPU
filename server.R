@@ -1,118 +1,132 @@
-
-# Initiation du serveur -----
 server <- function(input, output, session) {
   
-  # Fonction pour tout sélectionner -----
+  # Sélectionner toutes les options dans les filtres
   observeEvent(input$select_all, {
     updateSelectInput(session, "IGP", selected = IGP)
     updateSelectInput(session, "Marque", selected = marque)
   })
   
-  # Filtrer les données selon les choix -----
+  # Filtrer les données selon les choix de l'utilisateur
   filtered_data <- reactive({
     req(input$IGP, input$Marque)
     df %>%
       filter(igp %in% input$IGP, manufacturer %in% input$Marque)
   })
   
-  # Générer la table des données -----
+  # Générer la table des données
   output$table <- renderDataTable({
     datatable(filtered_data(), options = list(
-      pageLength = 9,
+      pageLength = 10,
       scrollX = TRUE,
-      scrollY = "50vh",  # Hauteur fixe pour activer le scroll
-      deferRender = TRUE,
-      scroller = TRUE,
-      lengthMenu = c(9, 15, 20,as.integer(nrow(df)/8),as.integer(nrow(df)/4),as.integer(nrow(df)/2),as.integer(nrow(df)/2)+ as.integer(nrow(df)/8),as.integer(nrow(df)/2)+ as.integer(nrow(df)/4),nrow(df)), # Options pour le nombre de lignes par page
-      paging = TRUE, # Assurez-vous que la pagination est activée
-      initComplete = JS(
-        "function(settings, json) {",
-        "$('table').css({'color': 'white'});",
-        "$('thead th').css({'color': 'white'});",
-        "}"
-      )
-    )) %>%
-      formatStyle(
-        columns = colnames(filtered_data()),
-        color = 'white'
-      )
+      dom = 'Bfrtip',
+      buttons = c('copy', 'csv', 'excel')
+    ))
   })
   
-  # Générer les statistiques descriptives -----
+  # Générer les statistiques descriptives
   output$desc_stats <- renderDataTable({
-    desc_stats <- skim(filtered_data()) %>%
-      dplyr::select(skim_type, skim_variable, n_missing, complete_rate, factor.top_counts, numeric.mean, numeric.sd, numeric.p0, numeric.p25, numeric.p50, numeric.p75, numeric.p100)
-    
-    datatable(desc_stats, options = list(
-      paging=FALSE,
-      # Options pour le nombre de lignes par page
-      initComplete = JS(
-        "function(settings, json) {",
-        "$('table').css({'color': 'white'});",
-        "$('thead th').css({'color': 'white'});",
-        "}"
-      )
-    )) %>%
-      formatStyle(
-        columns = colnames(desc_stats),
-        color = 'white'
-      )
+    req(filtered_data())
+    skim(filtered_data()) %>%
+      dplyr::select(skim_type, skim_variable, n_missing, complete_rate, numeric.mean, numeric.sd, numeric.p0, numeric.p50) %>%
+      datatable(options = list(scrollX = TRUE, pageLength = 5))
   })
   
-  # Télécharger les données -----
+  # Télécharger les données filtrées
   output$downloadData <- downloadHandler(
-    filename = function() {
-      paste("data-", Sys.Date(), ".csv", sep = "")
-    },
+    filename = function() { paste("filtered_data_", Sys.Date(), ".csv", sep = "") },
     content = function(file) {
       write.csv(filtered_data(), file)
     }
   )
-  # Télécharger les données -----
+  
   output$downloadData2 <- downloadHandler(
-    filename = function() {
-      paste("datadesc-", Sys.Date(), ".csv", sep = "")
-    },
+    filename = function() { paste("desc_stats_", Sys.Date(), ".csv", sep = "") },
     content = function(file) {
-      write.csv(skim(filtered_data()), file)
+      desc_stats <- skim(filtered_data()) %>%
+        dplyr::select(skim_type, skim_variable, n_missing, complete_rate, numeric.mean, numeric.sd, numeric.p0, numeric.p50)
+      write.csv(desc_stats, file)
     }
   )
-  # Histogramme pour les variables quantitatives
+  
+  # Visualisation des histogrammes
   output$histogram <- renderPlot({
-    req(input$var_quanti)  # Nécessaire pour s'assurer qu'une variable est choisie
-    ggplot(df, aes_string(x = input$var_quanti)) +
-      geom_histogram(binwidth = 10, fill = "blue", color = "black", alpha = 0.7) +
-      labs(
-        title = paste("Histogramme de", input$var_quanti),
-        x = input$var_quanti,
-        y = "Fréquence"
-      ) +
+    req(input$var_quanti)
+    ggplot(filtered_data(), aes_string(x = input$var_quanti)) +
+      geom_histogram(fill = "blue", color = "black", bins = 30) +
+      labs(title = paste("Histogramme de", input$var_quanti), x = input$var_quanti, y = "Fréquence") +
       theme_minimal()
   })
   
-  # Tableau des répartitions pour les variables qualitatives
+  # Visualisation des répartitions qualitatives
   output$qualitative_table <- renderDataTable({
-    req(input$var_quali)  # Nécessaire pour s'assurer qu'une variable est choisie
-    df %>%
+    req(input$var_quali)
+    filtered_data() %>%
       group_by(.data[[input$var_quali]]) %>%
       summarise(Count = n()) %>%
-      datatable(
-        options = list(
-          pageLength = 5,
-          scrollX = TRUE,
-          searching = TRUE,
-          # Désactiver la recherche pour plus de clarté
-          initComplete = JS(
-            "function(settings, json) {",
-            "$('table').css({'color': 'white'});",
-            "$('thead th').css({'color': 'white'});",
-            "}"
-          )
-        ))
-          
-        
-     
+      datatable(options = list(pageLength = 5))
+  })
+  
+  # Implémentation de l'ACP
+  observeEvent(input$run_acp, {
+    req(input$acp_vars)
+    active_data <- filtered_data()[, input$acp_vars]
+    acp_result <- PCA(active_data, graph = FALSE)
+    
+    # Plot des projections des individus
+    output$acp_ind_plot <- renderPlot({
+      fviz_pca_ind(acp_result, geom = "point") +
+        labs(title = "Projection des individus")
+    })
+    
+    # Plot des projections des variables
+    output$acp_var_plot <- renderPlot({
+      fviz_pca_var(acp_result) +
+        labs(title = "Projection des variables")
+    })
+    
+    # Résumé de l'ACP
+    output$acp_results_text <- renderPrint({
+      print(acp_result)
+    })
+    
+    # BiPlot ACP
+    output$biplot <- renderPlot({
+      fviz_pca_biplot(acp_result, geom = c("point", "text"))
+    })
+    
+    # Valeurs propres
+    output$eigen_values <- renderPrint({
+      print(acp_result$eig)
+    })
+    
+    # Matrice des variances-covariances
+    output$var_cov_matrix <- renderPrint({
+      cov(as.matrix(active_data))
+    })
+  })
+  
+  # Étude technique : Contributions et cos²
+  output$contrib_PC1 <- renderPlot({
+    req(input$run_acp)
+    fviz_contrib(acp_result, choice = "var", axes = 1) +
+      labs(title = "Contributions variables - Axe 1")
+  })
+  
+  output$contrib_PC2 <- renderPlot({
+    req(input$run_acp)
+    fviz_contrib(acp_result, choice = "var", axes = 2) +
+      labs(title = "Contributions variables - Axe 2")
+  })
+  
+  output$cos2_PC1 <- renderPlot({
+    req(input$run_acp)
+    fviz_cos2(acp_result, choice = "var", axes = 1) +
+      labs(title = "Cos² des variables - Axe 1")
+  })
+  
+  output$cos2_PC2 <- renderPlot({
+    req(input$run_acp)
+    fviz_cos2(acp_result, choice = "var", axes = 2) +
+      labs(title = "Cos² des variables - Axe 2")
   })
 }
-
-
