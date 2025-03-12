@@ -77,5 +77,42 @@ server <- function(input, output, session) {
       write.csv(skim(filtered_data()), file)
     }
   )
+  # Histogramme pour les variables quantitatives
+  output$histogram <- renderPlot({
+    req(input$var_quanti)  # Nécessaire pour s'assurer qu'une variable est choisie
+    ggplot(df, aes_string(x = input$var_quanti)) +
+      geom_histogram(binwidth = 10, fill = "blue", color = "black", alpha = 0.7) +
+      labs(
+        title = paste("Histogramme de", input$var_quanti),
+        x = input$var_quanti,
+        y = "Fréquence"
+      ) +
+      theme_minimal()
+  })
+  
+  # Tableau des répartitions pour les variables qualitatives
+  output$qualitative_table <- renderDataTable({
+    req(input$var_quali)  # Nécessaire pour s'assurer qu'une variable est choisie
+    df %>%
+      group_by(.data[[input$var_quali]]) %>%
+      summarise(Count = n()) %>%
+      datatable(
+        options = list(
+          pageLength = 5,
+          scrollX = TRUE,
+          searching = TRUE,
+          # Désactiver la recherche pour plus de clarté
+          initComplete = JS(
+            "function(settings, json) {",
+            "$('table').css({'color': 'white'});",
+            "$('thead th').css({'color': 'white'});",
+            "}"
+          )
+        ))
+          
+        
+     
+  })
 }
+
 
