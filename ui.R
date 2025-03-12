@@ -192,7 +192,11 @@ ui <- shinyUI(dashboardPage(
                                       selected = quant_vars[1]
                                     ),
                                     plotlyOutput("histogram")
+                                  
                              ),
+                             column(6,
+                                    plotlyOutput("boxplot")
+                                   ),
                              column(6,
                                     selectInput(
                                       inputId = "var_quali",
