@@ -14,17 +14,19 @@ library(readxl)
 library(skimr)
 
 # Chargement et préparation des données -----
-df <- read_csv2("data/gpu_specs_v7.csv")
+df <- read.csv2("data/CG_PC.csv",sep=",")
 df2= read.csv2("data/CG_laptop.csv",sep=",")
 # Transformation en facteurs des variables concernées -----
-fact <- c(12:16)
+fact <- c(1:3,11:14)
 df[fact] <- lapply(df[, fact], as.factor)
-
+df$memSize = as.numeric(df$memSize)
 # Création de liste des données -----
 quant_vars <- names(df)[sapply(df, is.numeric)]
 #type_CG <- unique(df$type_CG)
 marque <- unique(df$manufacturer)
 IGP <- unique(df$igp)
+
+qual_vars <- names(df)[sapply(df, is.factor)]   # Variables qualitatives (facteurs ou catégoriques)
 
 # actives = df[,c(1,4,5,6,8,9,10,11)]
 # centrage réduction
