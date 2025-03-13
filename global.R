@@ -1,5 +1,6 @@
 # Chargement des bibliothèques nécessaires -----
 library(shiny)
+library(gganimate)
 library(tidyverse)
 library(DT)
 library(shinythemes)
@@ -64,7 +65,7 @@ duplicated_rows <- df[duplicated(df[, 1:3]) | duplicated(df[, 1:3], fromLast = T
 df<- df[!duplicated(df[, 1:3]), ]
 # Préparation et nettoyage des données -----
 # Transformation des colonnes en facteurs (si applicable)
-fact <- c(1:3,11:14)  # Indices des colonnes à transformer en facteurs (ajustez selon vos données)
+fact <- c(1:2,11:14)  # Indices des colonnes à transformer en facteurs (ajustez selon vos données)
 df[fact] <- lapply(df[, fact], as.factor)
 
 # Création des listes pour les variables quantitatives et qualitatives -----
