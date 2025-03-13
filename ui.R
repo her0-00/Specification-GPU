@@ -12,7 +12,8 @@ ui <- shinyUI(dashboardPage(
       menuItem("ACP", tabName = "acp", icon = icon("chart-line")),
       menuItem("Etude Technique", tabName = "Etude_technique", icon = icon("cogs")),
       menuItem("Matrice de Corrélation", tabName = "correlation", icon = icon("th")),
-      menuItem("Classification et ML", tabName = "classification", icon = icon("brain"))
+      menuItem("Classification et ML", tabName = "classification", icon = icon("brain")),
+      menuItem("Évolution des GPU", tabName = "evolution", icon = icon("line-chart"))
     ),
     selectInput(
       inputId = "IGP",
@@ -340,6 +341,25 @@ ui <- shinyUI(dashboardPage(
                 ),
                 box(title = "Résumé du modèle", status = "primary", solidHeader = TRUE, width = 12, verbatimTextOutput("model_summary")),
                 box(title = "Évaluation du modèle", status = "primary", solidHeader = TRUE, width = 12, verbatimTextOutput("model_evaluation"))
+              )
+      ),
+      #Onglet XXXX
+      tabItem(tabName = "evolution",
+              fluidRow(
+                column(6,
+                       selectInput("selected_brand", "Sélectionnez la marque :", choices = unique(df$manufacturer), selected = unique(df$manufacturer)[1])
+                ),
+                column(6,
+                       sliderInput("year_range", "Sélectionnez la plage d'années :", min = min(df$releaseYear), max = max(df$releaseYear), value = c(min(df$releaseYear), max(df$releaseYear)))
+                )
+              ),
+              fluidRow( column(12, box(title = "Mémoire (memSize)", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_memSize"))),
+                        column(12, box(title = "Bus de mémoire (memBusWidth)", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_memBusWidth"))),
+                        column(12, box(title = "Fréquence GPU (gpuClock)", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_gpuClock"))),
+                column(12, box(title = "Fréquence Mémoire (memClock)", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_memClock"))),
+                column(12, box(title = "Shader Unifié (unifiedShader)", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_unifiedShader"))),
+                column(12, box(title = "TMU", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_tmu"))),
+                column(12, box(title = "rop", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_top")))
               )
       )
     )
