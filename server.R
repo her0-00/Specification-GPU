@@ -1,5 +1,7 @@
 server <- function(input, output, session) {
   
+  
+  
   # Sélectionner toutes les options dans les filtres
   observeEvent(input$select_all, {
     updateSelectInput(session, "IGP", selected = IGP)
@@ -111,8 +113,9 @@ server <- function(input, output, session) {
   
   output$acp_ind_plot <- renderPlot({
     req(reactive_acp$result)  # Vérifier que l'ACP a bien été réalisée
-    plot_acp_ind(reactive_acp$result, df, input$acp_cat_vars)
+    plot_acp_ind(reactive_acp$result, df, input$acp_cat_vars, input$contrib_value)
   })
+  
   
   # Tracer les graphiques des variables
   output$acp_var_plot <- renderPlot({
@@ -126,7 +129,7 @@ server <- function(input, output, session) {
   
   output$biplot <- renderPlot({
     req(reactive_acp$result)  # Vérifier que l'ACP a bien été réalisée
-    plot_acp_biplot(reactive_acp$result, df, input$acp_cat_vars, input$acp_vars)
+    plot_acp_biplot(reactive_acp$result, df, input$acp_cat_vars, input$acp_vars,input$contrib_value)
   })
   
   output$acp_results_text <- renderPrint({
@@ -251,4 +254,47 @@ server <- function(input, output, session) {
              tl.cex = 0.8, cl.cex = 0.8)
   })
   
+  
+  # Reactive expression for the selected dataset
+  df_select <- reactive({
+    df
+  })
+  
+  # Train and evaluate models
+  observeEvent(input$train_model, {
+    req(input$algo, input$target_var)
+    data <- df_select()
+    target_var <- input$target_var
+    
+    if (input$algo == "Random Forest") {
+      model <- train_random_forest(data, target_var)
+    } else if (input$algo == "SVM") {
+      model <- train_svm(data, target_var)
+    } else if (input$algo == "KNN") {
+      req(input$k_value)
+      k <- input$k_value
+      model <- train_knn(data, target_var, k)
+    } else if (input$algo == "K-means") {
+      req(input$centers)
+      centers <- input$centers
+      model <- perform_kmeans(data, centers)
+    }
+    
+    output$model_summary <- renderPrint({
+      print(model)
+    })
+    
+    if (input$algo == "KNN") {
+      output$model_evaluation <- renderPrint({
+        eval <- evaluate_knn(model, data, target_var)
+        print(eval)
+      })
+    } else {
+      output$model_evaluation <- renderPrint({
+        print("Evaluation is not available for this model type.")
+      })
+    }
+  })
 }
+  
+
