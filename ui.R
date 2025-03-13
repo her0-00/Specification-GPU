@@ -11,7 +11,8 @@ ui <- shinyUI(dashboardPage(
       menuItem("GPU laptop", tabName = "GPUL", icon = icon("chart-bar")),
       menuItem("ACP", tabName = "acp", icon = icon("chart-line")),
       menuItem("Etude Technique", tabName = "Etude_technique", icon = icon("cogs")),
-      menuItem("Matrice de Corrélation", tabName = "correlation", icon = icon("th"))
+      menuItem("Matrice de Corrélation", tabName = "correlation", icon = icon("th")),
+      menuItem("Classification et ML", tabName = "classification", icon = icon("brain"))
     ),
     selectInput(
       inputId = "IGP",
@@ -46,24 +47,24 @@ ui <- shinyUI(dashboardPage(
     tags$head(
       tags$style(HTML(
         "body {font-family: 'Arial', sans-serif; background-color: #F4F6F9; color: #333;}
-        .box-title { font-weight: bold; font-size: 16px; text-transform: uppercase; }
-        .skin-blue .main-header .logo, .skin-blue .main-header .navbar { background-color: #3271a5; }
-        .skin-blue .main-sidebar { background-color: #3271a5; }
-        .box { border-radius: 12px; box-shadow: 3px 3px 15px rgba(0, 0, 0, 0.15); transition: 0.3s ease-in-out; }
-        .box:hover { transform: none !important ; }
-        .btn { transition: background-color 0.3s ease-in-out, box-shadow 0.3s ease-in-out; border-radius: 8px; }
-        .btn:hover { background-color: #ff9800 !important; color: white !important; box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.3); }
-        .dark-mode { background-color: #2C3E50; color: white; }
-        .dark-mode .box { background-color: #34495E; color: white; border-color: #555; }
-        .dark-mode .btn { background-color: #5DADE2 !important; color: white !important; }
-        .dark-mode .sidebar { background-color: #1A252F !important; }
-        .dark-mode .main-header, .dark-mode .navbar { background-color: #1F2933; }
-        .dark-mode .sidebar-menu > li > a { color: white !important; }
-        .dark-mode .sidebar-menu > li.active > a { background-color: #445A6F !important; }
-        .tab-pane { padding: 15px; }
-        .box-body { padding: 15px; }
-        .footer { background-color: #222D32; color: white; padding: 15px; text-align: center; font-size: 14px; }
-        .nav-tabs-custom .nav-tabs li a {
+         .box-title { font-weight: bold; font-size: 16px; text-transform: uppercase; }
+         .skin-blue .main-header .logo, .skin-blue .main-header .navbar { background-color: #3271a5; }
+         .skin-blue .main-sidebar { background-color: #3271a5; }
+         .box { border-radius: 12px; box-shadow: 3px 3px 15px rgba(0, 0, 0, 0.15); transition: 0.3s ease-in-out; }
+         .box:hover { transform: none !important ; }
+         .btn { transition: background-color 0.3s ease-in-out, box-shadow 0.3s ease-in-out; border-radius: 8px; }
+         .btn:hover { background-color: #ff9800 !important; color: white !important; box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.3); }
+         .dark-mode { background-color: #2C3E50; color: white; }
+         .dark-mode .box { background-color: #34495E; color: white; border-color: #555; }
+         .dark-mode .btn { background-color: #5DADE2 !important; color: white !important; }
+         .dark-mode .sidebar { background-color: #1A252F !important; }
+         .dark-mode .main-header, .dark-mode .navbar { background-color: #1F2933; }
+         .dark-mode .sidebar-menu > li > a { color: white !important; }
+         .dark-mode .sidebar-menu > li.active > a { background-color: #445A6F !important; }
+         .tab-pane { padding: 15px; }
+         .box-body { padding: 15px; }
+         .footer { background-color: #222D32; color: white; padding: 15px; text-align: center; font-size: 14px; }
+         .nav-tabs-custom .nav-tabs li a {
       font-size: 15px;
       font-weight: bold;
       color: #3271a5;
@@ -221,6 +222,7 @@ ui <- shinyUI(dashboardPage(
                            box(
                              title = "Sélectionnez les variables pour l'ACP", status = "primary", solidHeader = TRUE, width = 6,
                              selectInput("acp_vars", "Variables actives :", choices = quant_vars_actives, selected = quant_vars_actives[1:3], multiple = TRUE),
+                             numericInput("contrib_value", "Valeur de contrib :", value = 50, min = 10, max = 100),
                              actionButton("run_acp", "Lancer l'ACP", class = "btn-success"),
                              actionButton("select_all_AC", "Sélectionner toutes les variables", class = "btn-info")
                            ),
@@ -313,7 +315,34 @@ ui <- shinyUI(dashboardPage(
                 ),
                 box(title = "Matrice de Corrélation", status = "primary", solidHeader = TRUE, width = 12, plotOutput("corr_plot"))
               )
+      ),
+      
+      # Onglet Classification et ML -----
+      tabItem(tabName = "classification",
+              fluidRow(
+                box(
+                  title = "Sélectionnez les variables", status = "primary", solidHeader = TRUE, width = 12,
+                  selectInput("target_var", "Variable cible :", 
+                              choices = colnames(df), 
+                              selected = colnames(df)[1]),
+                  selectInput("algo", "Algorithme :", 
+                              choices = c("Random Forest", "SVM", "KNN", "K-means"), 
+                              selected = "Random Forest"),
+                  conditionalPanel(
+                    condition = "input.algo == 'KNN'",
+                    numericInput("k_value", "Valeur de k :", value = 3, min = 1)
+                  ),
+                  conditionalPanel(
+                    condition = "input.algo == 'K-means'",
+                    numericInput("centers", "Nombre de clusters :", value = 3, min = 1)
+                  ),
+                  actionButton("train_model", "Entraîner le modèle", class = "btn-success")
+                ),
+                box(title = "Résumé du modèle", status = "primary", solidHeader = TRUE, width = 12, verbatimTextOutput("model_summary")),
+                box(title = "Évaluation du modèle", status = "primary", solidHeader = TRUE, width = 12, verbatimTextOutput("model_evaluation"))
+              )
       )
     )
   )
-))
+)
+)
