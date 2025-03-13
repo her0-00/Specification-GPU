@@ -10,7 +10,51 @@ library(ggplot2)
 library(corrplot)
 library(skimr)
 library(shinyjs)
-library(plotly)  # Add this line
+library(plotly)
+library(caret)  # For machine learning algorithms
+library(randomForest)
+library(e1071)
+library(class)  # For KNN
+library(cluster)  # For k-means
+
+# Function to train a Random Forest model
+train_random_forest <- function(data, target) {
+  model <- randomForest(as.formula(paste(target, "~ .")), data = data)
+  return(model)
+}
+
+# Function to train an SVM model
+train_svm <- function(data, target) {
+  model <- svm(as.formula(paste(target, "~ .")), data = data)
+  return(model)
+}
+
+# Function to evaluate the model
+evaluate_model <- function(model, data, target) {
+  predictions <- predict(model, data)
+  confusionMatrix(predictions, data[[target]])
+}
+
+
+# Function to train a KNN model
+train_knn <- function(data, target, k) {
+  train_data <- data[-which(names(data) == target)]
+  train_target <- data[[target]]
+  knn_model <- knn(train = train_data, test = train_data, cl = train_target, k = k)
+  return(knn_model)
+}
+
+# Function to perform k-means clustering
+perform_kmeans <- function(data, centers) {
+  kmeans_model <- kmeans(data, centers)
+  return(kmeans_model)
+}
+
+# Function to evaluate the KNN model
+evaluate_knn <- function(model, data, target) {
+  predictions <- model
+  confusionMatrix(predictions, data[[target]])
+}
 
 # Chargement des données -----
 # Assurez-vous que les chemins sont corrects et adaptés à vos fichiers
@@ -102,7 +146,6 @@ actives <- df[, c(3:10)]
 data_scaled <- as.data.frame(scale(actives[, -1]))
 quant_vars_actives <- colnames(actives[, -1])
 
-row.names(df) <- paste(df$manufacturer,df$productName,df$releaseYear,sep = "_")
 update_acp <- function(input, df) {
   if (!is.null(input$acp_vars) && length(input$acp_vars) > 1) {
     reactive_acp$selected_vars <- input$acp_vars
@@ -123,28 +166,26 @@ doitPerformACP <- function(data, vars) {
 
 reactive_acp <- reactiveValues(result = NULL, selected_vars = NULL)
 
-plot_acp_ind <- function(acp_result, df, color_var) {
+plot_acp_ind <- function(acp_result, df, color_var, contrib_value) {
   if (!is.null(color_var) && color_var %in% names(df) && color_var != "") {
     # Coloration par variable catégorielle si sélectionnée
     fviz_pca_ind(acp_result,
                  repel = TRUE,
-            
                  pointsize = 1,  # Réduire la taille des points
                  habillage = df[[color_var]],  # Utilisation de la variable catégorielle
                  addEllipses = TRUE,  # Ajout des ellipses de concentration
                  palette = "jco", 
                  alpha.ind = 0.5,  # Transparence des points
-                 select.ind = list(contrib = 50))  # Sélectionner les individus avec les plus grandes contributions
+                 select.ind = list(contrib = contrib_value))  # Sélectionner les individus avec les plus grandes contributions
   } else {
     # Coloration par cos2 si aucune variable catégorielle n'est sélectionnée
     fviz_pca_ind(acp_result,
                  repel = TRUE,
-              
                  pointsize = 1,  # Réduire la taille des points
                  col.ind = "cos2",  # Rétablir la coloration basée sur cos2
                  gradient.cols = c("#00AFBB", "black", "red"), 
                  alpha.ind = 0.5,  # Transparence des points
-                 select.ind = list(contrib = 50))  # Sélectionner les individus avec les plus grandes contributions
+                 select.ind = list(contrib = contrib_value))  # Sélectionner les individus avec les plus grandes contributions
   }
 }
 
@@ -156,7 +197,7 @@ plot_acp_var <- function(acp_result, selected_vars) {
                select.var = list(name = selected_vars))  # Sélectionner uniquement les variables actives choisies
 }
 
-plot_acp_biplot <- function(acp_result, df, color_var, selected_vars) {
+plot_acp_biplot <- function(acp_result, df, color_var, selected_vars, contrib_value) {
   if (!is.null(color_var) && color_var %in% names(df) && color_var != "") {
     fviz_pca_biplot(acp_result, 
                     repel = TRUE, 
@@ -165,7 +206,8 @@ plot_acp_biplot <- function(acp_result, df, color_var, selected_vars) {
                     select.var = list(name = selected_vars),  # Sélectionner les variables choisies
                     addEllipses = TRUE, 
                     arrows = TRUE,  # Affiche bien les vecteurs des variables
-                    palette = "jco")
+                    palette = "jco",
+                    select.ind = list(contrib = contrib_value))
   } else {
     fviz_pca_biplot(acp_result, 
                     repel = TRUE, 
@@ -173,6 +215,7 @@ plot_acp_biplot <- function(acp_result, df, color_var, selected_vars) {
                     col.ind = "cos2",  # Coloration des individus selon cos2
                     gradient.cols = c("#00AFBB", "black", "red"),
                     select.var = list(name = selected_vars), 
+                    select.ind = list(contrib = contrib_value),
                     arrows = TRUE)  # Forcer l'affichage des vecteurs
   }
 }
