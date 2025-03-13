@@ -10,7 +10,8 @@ ui <- shinyUI(dashboardPage(
       menuItem("GPU PC", tabName = "GPUP", icon = icon("chart-bar")),
       menuItem("GPU laptop", tabName = "GPUL", icon = icon("chart-bar")),
       menuItem("ACP", tabName = "acp", icon = icon("chart-line")),
-      menuItem("Etude Technique", tabName = "Etude_technique", icon = icon("cogs"))
+      menuItem("Etude Technique", tabName = "Etude_technique", icon = icon("cogs")),
+      menuItem("Matrice de Corrélation", tabName = "correlation", icon = icon("th"))
     ),
     selectInput(
       inputId = "IGP",
@@ -192,11 +193,11 @@ ui <- shinyUI(dashboardPage(
                                       selected = quant_vars[1]
                                     ),
                                     plotlyOutput("histogram")
-                                  
+                                    
                              ),
                              column(6,
                                     plotlyOutput("boxplot")
-                                   ),
+                             ),
                              column(6,
                                     selectInput(
                                       inputId = "var_quali",
@@ -285,7 +286,34 @@ ui <- shinyUI(dashboardPage(
                          )
                 )
               )
-      ) # Fin de l'onglet Étude Technique
+      ), # Fin de l'onglet Étude Technique
+      
+      # Onglet affichant la matrice de corrélation -----
+      tabItem(tabName = "correlation",
+              fluidRow(
+                box(
+                  title = "Sélectionnez les variables", status = "primary", solidHeader = TRUE, width = 12,
+                  selectInput("corr_vars", "Sélectionnez les variables :", 
+                              choices = quant_vars, 
+                              selected = quant_vars[1:2], 
+                              multiple = TRUE),
+                  actionButton("select_all_corr", "Sélectionner toutes les variables", class = "btn-info")
+                ),
+                box(title = "Options de personnalisation", status = "primary", solidHeader = TRUE, width = 12,
+                    checkboxInput("customize_corr", label=tags$span(style = "color: black;", "Personnaliser l'apparence"), value = FALSE),
+                    conditionalPanel(
+                      condition = "input.customize_corr == true",
+                      selectInput("corr_method", label=tags$span(style = "color: black;", "Méthode de corrélation"), 
+                                  choices = c("circle", "square", "color", "number"), selected = "circle"),
+                      selectInput("corr_type", label=tags$span(style = "color: black;", "Type de matrice"), 
+                                  choices = c("full", "upper", "lower"), selected = "full"),
+                      selectInput("corr_order", label=tags$span(style = "color: black;", "Ordre des variables"), 
+                                  choices = c("original", "alphabet", "hclust"), selected = "original")
+                    )
+                ),
+                box(title = "Matrice de Corrélation", status = "primary", solidHeader = TRUE, width = 12, plotOutput("corr_plot"))
+              )
+      )
     )
   )
 ))
