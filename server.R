@@ -1,7 +1,5 @@
 server <- function(input, output, session) {
   
-  
-  
   # Sélectionner toutes les options dans les filtres
   observeEvent(input$select_all, {
     updateSelectInput(session, "IGP", selected = IGP)
@@ -115,7 +113,6 @@ server <- function(input, output, session) {
     req(reactive_acp$result)  # Vérifier que l'ACP a bien été réalisée
     plot_acp_ind(reactive_acp$result, df, input$acp_cat_vars, input$contrib_value)
   })
-  
   
   # Tracer les graphiques des variables
   output$acp_var_plot <- renderPlot({
@@ -254,7 +251,6 @@ server <- function(input, output, session) {
              tl.cex = 0.8, cl.cex = 0.8)
   })
   
-  
   # Reactive expression for the selected dataset
   df_select <- reactive({
     df
@@ -295,6 +291,7 @@ server <- function(input, output, session) {
       })
     }
   })
+  
   # Filter data based on selected brand and year range
   filtered_evolution_data <- reactive({
     req(input$selected_brand, input$year_range)
@@ -303,21 +300,27 @@ server <- function(input, output, session) {
   })
   
   # Function to generate the evolution plot for a given characteristic
-  generate_evolution_plot <- function(data, characteristic, brand, color) {
-    ggplot(data, aes(x = releaseYear, y = !!sym(characteristic), color = I(color))) +
+  generate_evolution_plot <- function(data, characteristic, brand) {
+    n_colors <- length(unique(data$productName))
+    colors <- generate_colors(n_colors)
+    
+    ggplot(data, aes(x = releaseYear, y = !!sym(characteristic), color = productName)) +
       geom_line() +
+      geom_text(aes(label = productName), check_overlap = TRUE, hjust = 1.1, vjust = 1.1, size = 2.5) +
       labs(title = paste("Évolution de", characteristic, "pour", brand),
            x = "Année de sortie",
            y = "Valeur des caractéristiques") +
-      theme_minimal() # +
-      #scale_y_continuous(breaks = seq(0, max(data[[characteristic]], na.rm = TRUE), by = 20))
+      theme_minimal() +
+      scale_x_continuous(breaks = seq(min(data$releaseYear), max(data$releaseYear), by = 1)) +
+      scale_y_continuous(breaks = seq(0, max(data[[characteristic]], na.rm = TRUE), by = 20)) +
+      scale_color_manual(values = colors)
   }
   
   # Generate the evolution plot for memClock
   output$evolution_plot_memClock <- renderPlotly({
     req(filtered_evolution_data())
     data <- filtered_evolution_data()
-    p <- generate_evolution_plot(data, "memClock", input$selected_brand,'blue')
+    p <- generate_evolution_plot(data, "memClock", input$selected_brand)
     ggplotly(p)
   })
   
@@ -325,7 +328,7 @@ server <- function(input, output, session) {
   output$evolution_plot_unifiedShader <- renderPlotly({
     req(filtered_evolution_data())
     data <- filtered_evolution_data()
-    p <- generate_evolution_plot(data, "unifiedShader", input$selected_brand,'red')
+    p <- generate_evolution_plot(data, "unifiedShader", input$selected_brand)
     ggplotly(p)
   })
   
@@ -333,7 +336,7 @@ server <- function(input, output, session) {
   output$evolution_plot_tmu <- renderPlotly({
     req(filtered_evolution_data())
     data <- filtered_evolution_data()
-    p <- generate_evolution_plot(data, "tmu", input$selected_brand,'gold')
+    p <- generate_evolution_plot(data, "tmu", input$selected_brand)
     ggplotly(p)
   })
   
@@ -341,7 +344,7 @@ server <- function(input, output, session) {
   output$evolution_plot_top <- renderPlotly({
     req(filtered_evolution_data())
     data <- filtered_evolution_data()
-    p <- generate_evolution_plot(data, "rop", input$selected_brand,'cyan')
+    p <- generate_evolution_plot(data, "rop", input$selected_brand)
     ggplotly(p)
   })
   
@@ -349,7 +352,7 @@ server <- function(input, output, session) {
   output$evolution_plot_memSize <- renderPlotly({
     req(filtered_evolution_data())
     data <- filtered_evolution_data()
-    p <- generate_evolution_plot(data, "memSize", input$selected_brand,'violet')
+    p <- generate_evolution_plot(data, "memSize", input$selected_brand)
     ggplotly(p)
   })
   
@@ -357,7 +360,7 @@ server <- function(input, output, session) {
   output$evolution_plot_memBusWidth <- renderPlotly({
     req(filtered_evolution_data())
     data <- filtered_evolution_data()
-    p <- generate_evolution_plot(data, "memBusWidth", input$selected_brand,'maroon')
+    p <- generate_evolution_plot(data, "memBusWidth", input$selected_brand)
     ggplotly(p)
   })
   
@@ -365,10 +368,7 @@ server <- function(input, output, session) {
   output$evolution_plot_gpuClock <- renderPlotly({
     req(filtered_evolution_data())
     data <- filtered_evolution_data()
-    p <- generate_evolution_plot(data, "gpuClock", input$selected_brand,'green')
+    p <- generate_evolution_plot(data, "gpuClock", input$selected_brand)
     ggplotly(p)
   })
 }
-
-  
-
