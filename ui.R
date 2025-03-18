@@ -12,7 +12,6 @@ ui <- shinyUI(dashboardPage(
       menuItem("ACP", tabName = "acp", icon = icon("chart-line")),
       menuItem("Etude Technique", tabName = "Etude_technique", icon = icon("cogs")),
       menuItem("Matrice de Corrélation", tabName = "correlation", icon = icon("th")),
-      menuItem("Classification et ML", tabName = "classification", icon = icon("brain")),
       menuItem("Évolution des GPU", tabName = "evolution", icon = icon("line-chart"))
     ),
     selectInput(
@@ -102,7 +101,6 @@ ui <- shinyUI(dashboardPage(
       text-transform: uppercase;
       letter-spacing: 1px;
     }
-
 
 
     /* Style de l'onglet actif */
@@ -223,6 +221,8 @@ ui <- shinyUI(dashboardPage(
                            box(
                              title = "Sélectionnez les variables pour l'ACP", status = "primary", solidHeader = TRUE, width = 6,
                              selectInput("acp_vars", "Variables actives :", choices = quant_vars_actives, selected = quant_vars_actives[1:3], multiple = TRUE),
+                             selectInput("selected_brand", "Choix de la marque:", choices = marq_, selected = NULL, multiple = TRUE),
+                             sliderInput("year_ranges", "Sélectionnez la plage d'années :", min = min(df$releaseYear), max = max(df$releaseYear), value = c(min(df$releaseYear), max(df$releaseYear))),
                              numericInput("contrib_value", "Valeur de contrib :", value = 50, min = 10, max = 100),
                              actionButton("run_acp", "Lancer l'ACP", class = "btn-success"),
                              actionButton("select_all_AC", "Sélectionner toutes les variables", class = "btn-info")
@@ -231,8 +231,6 @@ ui <- shinyUI(dashboardPage(
                                   box(
                                     title = "Sélectionnez les variables catégorielles", status = "primary", solidHeader = TRUE, width = 12,
                                     selectInput("acp_cat_vars", "Variables catégorielles :", choices = cat_vars, selected = NULL, multiple = TRUE),
-                                    selectInput("uesChoix de la marque:", choices = marq_, selected = NULL, multiple = TRUE),
-                                    sliderInput("year_range", "Sélectionnez la plage d'années :", min = min(df$releaseYear), max = max(df$releaseYear), value = c(min(df$releaseYear), max(df$releaseYear))),
                                     actionButton("apply_cat", "Appliquer", class = "btn-success")
                                   )
                            )
@@ -320,31 +318,6 @@ ui <- shinyUI(dashboardPage(
               )
       ),
       
-      # Onglet Classification et ML -----
-      tabItem(tabName = "classification",
-              fluidRow(
-                box(
-                  title = "Sélectionnez les variables", status = "primary", solidHeader = TRUE, width = 12,
-                  selectInput("target_var", "Variable cible :", 
-                              choices = colnames(df), 
-                              selected = colnames(df)[1]),
-                  selectInput("algo", "Algorithme :", 
-                              choices = c("Random Forest", "SVM", "KNN", "K-means"), 
-                              selected = "Random Forest"),
-                  conditionalPanel(
-                    condition = "input.algo == 'KNN'",
-                    numericInput("k_value", "Valeur de k :", value = 3, min = 1)
-                  ),
-                  conditionalPanel(
-                    condition = "input.algo == 'K-means'",
-                    numericInput("centers", "Nombre de clusters :", value = 3, min = 1)
-                  ),
-                  actionButton("train_model", "Entraîner le modèle", class = "btn-success")
-                ),
-                box(title = "Résumé du modèle", status = "primary", solidHeader = TRUE, width = 12, verbatimTextOutput("model_summary")),
-                box(title = "Évaluation du modèle", status = "primary", solidHeader = TRUE, width = 12, verbatimTextOutput("model_evaluation"))
-              )
-      ),
       #Onglet XXXX
       tabItem(tabName = "evolution",
               fluidRow(
