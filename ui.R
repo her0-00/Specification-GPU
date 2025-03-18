@@ -12,7 +12,7 @@ ui <- shinyUI(dashboardPage(
       menuItem("ACP", tabName = "acp", icon = icon("chart-line")),
       menuItem("Etude Technique", tabName = "Etude_technique", icon = icon("cogs")),
       menuItem("Matrice de Corrélation", tabName = "correlation", icon = icon("th")),
-      menuItem("Clustering", tabName = "clustering", icon = icon("brain")),
+      menuItem("Classification et ML", tabName = "classification", icon = icon("brain")),
       menuItem("Évolution des GPU", tabName = "evolution", icon = icon("line-chart"))
     ),
     selectInput(
@@ -231,11 +231,13 @@ ui <- shinyUI(dashboardPage(
                                   box(
                                     title = "Sélectionnez les variables catégorielles", status = "primary", solidHeader = TRUE, width = 12,
                                     selectInput("acp_cat_vars", "Variables catégorielles :", choices = cat_vars, selected = NULL, multiple = TRUE),
+                                    selectInput("uesChoix de la marque:", choices = marq_, selected = NULL, multiple = TRUE),
+                                    sliderInput("year_range", "Sélectionnez la plage d'années :", min = min(df$releaseYear), max = max(df$releaseYear), value = c(min(df$releaseYear), max(df$releaseYear))),
                                     actionButton("apply_cat", "Appliquer", class = "btn-success")
                                   )
                            )
                          ),
-                         fluidRow(
+                         fluidRow( 
                            column(6, box(title = "Projection des individus", status = "primary", solidHeader = TRUE, width = 12, plotOutput("acp_ind_plot"))),
                            column(6, box(title = "Projection des variables", status = "primary", solidHeader = TRUE, width = 12, plotOutput("acp_var_plot"))),
                            column(6, box(title = "Résumé de l'ACP", status = "primary", solidHeader = TRUE, width = 12, verbatimTextOutput("acp_results_text"))),
@@ -319,9 +321,29 @@ ui <- shinyUI(dashboardPage(
       ),
       
       # Onglet Classification et ML -----
-      tabItem(tabName = "clustering",
+      tabItem(tabName = "classification",
               fluidRow(
-              
+                box(
+                  title = "Sélectionnez les variables", status = "primary", solidHeader = TRUE, width = 12,
+                  selectInput("target_var", "Variable cible :", 
+                              choices = colnames(df), 
+                              selected = colnames(df)[1]),
+                  selectInput("algo", "Algorithme :", 
+                              choices = c("Random Forest", "SVM", "KNN", "K-means"), 
+                              selected = "Random Forest"),
+                  conditionalPanel(
+                    condition = "input.algo == 'KNN'",
+                    numericInput("k_value", "Valeur de k :", value = 3, min = 1)
+                  ),
+                  conditionalPanel(
+                    condition = "input.algo == 'K-means'",
+                    numericInput("centers", "Nombre de clusters :", value = 3, min = 1)
+                  ),
+                  actionButton("train_model", "Entraîner le modèle", class = "btn-success")
+                ),
+                box(title = "Résumé du modèle", status = "primary", solidHeader = TRUE, width = 12, verbatimTextOutput("model_summary")),
+                box(title = "Évaluation du modèle", status = "primary", solidHeader = TRUE, width = 12, verbatimTextOutput("model_evaluation"))
+              )
       ),
       #Onglet XXXX
       tabItem(tabName = "evolution",
@@ -336,10 +358,10 @@ ui <- shinyUI(dashboardPage(
               fluidRow( column(12, box(title = "Mémoire (memSize)", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_memSize"))),
                         column(12, box(title = "Bus de mémoire (memBusWidth)", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_memBusWidth"))),
                         column(12, box(title = "Fréquence GPU (gpuClock)", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_gpuClock"))),
-                column(12, box(title = "Fréquence Mémoire (memClock)", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_memClock"))),
-                column(12, box(title = "Shader Unifié (unifiedShader)", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_unifiedShader"))),
-                column(12, box(title = "TMU", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_tmu"))),
-                column(12, box(title = "rop", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_top")))
+                        column(12, box(title = "Fréquence Mémoire (memClock)", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_memClock"))),
+                        column(12, box(title = "Shader Unifié (unifiedShader)", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_unifiedShader"))),
+                        column(12, box(title = "TMU", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_tmu"))),
+                        column(12, box(title = "rop", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_top")))
               )
       )
     )
