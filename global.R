@@ -1,222 +1,367 @@
-# Chargement des bibliothèques nécessaires -----
-library(shiny)
-library(gganimate)
-library(tidyverse)
-library(DT)
-library(shinythemes)
-library(shinydashboard)
-library(FactoMineR)
-library(factoextra)
-library(ggplot2)
-library(corrplot)
-library(skimr)
-library(shinyjs)
-library(plotly)
-library(caret)  # For machine learning algorithms
-library(randomForest)
-library(e1071)
-library(class)  # For KNN
-library(cluster)  # For k-means
+server <- function(input, output, session) {
+  
+  # Sélectionner toutes les options dans les filtres
+  observeEvent(input$select_all, {
+    updateSelectInput(session, "IGP", selected = IGP)
+    updateSelectInput(session, "Marque", selected = marque)
+  })
+  
+  # Filtrer les données selon les choix de l'utilisateur
+  filtered_data <- reactive({
+    req(input$IGP, input$Marque)
+    df %>%
+      filter(igp %in% input$IGP, manufacturer %in% input$Marque)
+  })
+  
+  # Filtrer les données selon la marque et la plage d'années sélectionnées
+  filtered_acp_data <- reactive({
+    req(input$selected_brand, input$year_range)
+    filtered_data() %>%
+      filter(manufacturer == input$selected_brand, releaseYear >= input$year_ranges[1], releaseYear <= input$year_ranges[2])
+  })
+  
+  # Générer la table des données
+  output$table <- renderDataTable({
+    datatable(filtered_data(), options = list(
+      pageLength = 10,
+      scrollX = TRUE,
+      dom = 'Bfrtip',
+      buttons = c('copy', 'csv', 'excel')
+    ))
+  })
+  
+  # Générer les statistiques descriptives
+  output$desc_stats <- renderDataTable({
+    req(filtered_data())
+    skim(filtered_data()) %>%
+      dplyr::select(skim_type, skim_variable, n_missing, complete_rate, numeric.mean, numeric.sd, numeric.p0, numeric.p50) %>%
+      datatable(options = list(scrollX = TRUE, pageLength = 5))
+  })
+  
+  # Télécharger les données filtrées
+  output$downloadData <- downloadHandler(
+    filename = function() { paste("filtered_data_", Sys.Date(), ".csv", sep = "") },
+    content = function(file) {
+      write.csv(filtered_data(), file)
+    }
+  )
+  
+  output$downloadData2 <- downloadHandler(
+    filename = function() { paste("desc_stats_", Sys.Date(), ".csv", sep = "") },
+    content = function(file) {
+      desc_stats <- skim(filtered_data()) %>%
+        dplyr::select(skim_type, skim_variable, n_missing, complete_rate, numeric.mean, numeric.sd, numeric.p0, numeric.p50)
+      write.csv(desc_stats, file)
+    }
+  )
+  
+  # HISTOGRAMME
+  output$histogram <- renderPlotly({
+    req(input$var_quanti)  
+    p <- ggplot(df, aes_string(x = input$var_quanti)) +
+      geom_histogram(binwidth = 10, fill = "blue", color = "black", alpha = 0.7) +
+      labs(
+        title = paste("Histogramme de", input$var_quanti),
+        x = input$var_quanti,
+        y = "Fréquence"
+      ) 
+    ggplotly(p)  # Conversion en graphique interactif
+  })
+  
+  #boxplot
+  output$boxplot <- renderPlotly({
+    req(input$var_quanti)  # Vérification qu'une variable quantitative est choisie
+    
+    # Création du boxplot
+    p <- ggplot(df, aes_string(y = input$var_quanti)) +
+      geom_boxplot(fill = "orange", color = "black", alpha = 0.7) +
+      labs(
+        title = paste("Boxplot de", input$var_quanti),
+        y = input$var_quanti
+      ) +
+      theme_minimal()
+    
+    ggplotly(p)  # Conversion en graphique interactif
+  })
+  
+  # Visualisation des répartitions qualitatives
+  output$qualitative_table <- renderDataTable({
+    req(input$var_quali)
+    filtered_data() %>%
+      group_by(.data[[input$var_quali]]) %>%
+      summarise(Count = n()) %>%
+      datatable(options = list(pageLength = 5))
+  })
+  
+  # Implémentation de l'ACP
+  
+  # Sélectionne ou désélectionne toutes les variables pour l'ACP -----
+  observeEvent(input$select_all, {
+    current_selection <- input$acp_vars 
+    if (length(current_selection) < length(quantitative_vars)) {
+      updateSelectInput(session, "acp_vars", selected = quantitative_vars)
+    } else {
+      updateSelectInput(session, "acp_vars", selected = character(0))
+    }
+  })
+  
+  
+  # Exécution de l'ACP -----
+  observeEvent(input$run_acp, {
+    if (!is.null(input$acp_vars) && length(input$acp_vars) > 1) {
+      reactive_acp$selected_vars <- input$acp_vars
+      reactive_acp$result <- doitPerformACP(filtered_acp_data(), input$acp_vars)
+    } else {
+      reactive_acp$result <- NULL
+      reactive_acp$selected_vars <- NULL
+    }
+  })
+  
+  # Choix du nombre de clusters avec la méthode "within-cluster sum of squares" -----
+  output$nb_clust <- renderPlot({
+    req(reactive_acp$result)
+    df_ACP <- reactive_acp$result$coordinates
+    fviz_nbclust(df_ACP, FUNcluster = kmeans, method = "wss", k.max = 10, nstart = 100)
+  })
+  
+  # Exécution du clustering et visualisation des clusters -----
+  observeEvent(input$run_clustering, {
+    req(reactive_acp$result)
+    df_ACP <- reactive_acp$result$coordinates
+    cl2 <- kmeans(x = df_ACP, centers = 5, nstart = 100)
+    
+    output$cluster_plot <- renderPlot({
+      fviz_cluster(cl2, df_ACP, pointsize = 0)
+    })
+  })
+  
+  # Affichage des résultats de l'ACP
+  output$acp_ind_plot <- renderPlot({
+    req(reactive_acp$result)  # Vérifier que l'ACP a bien été réalisée
+    plot_acp_ind(reactive_acp$result,df, input$acp_cat_vars, input$contrib_value)
+  })
+  
+  # Tracer les graphiques des variables
+  output$acp_var_plot <- renderPlot({
+    req(reactive_acp$result)  # S'assurer que l'ACP a bien été réalisée
+    plot_acp_var(reactive_acp$result, input$acp_vars)
+  })
+  
+  observeEvent(input$apply_cat, {
+    update_acp(input, df)
+  })
+  
+  output$biplot <- renderPlot({
+    req(reactive_acp$result)  # Vérifier que l'ACP a bien été réalisée
+    plot_acp_biplot(reactive_acp$result, df, input$acp_cat_vars, input$acp_vars, input$contrib_value)
+  })
+  
+  output$acp_results_text <- renderPrint({
+    req(reactive_acp$result)
+    summary(reactive_acp$result)
+  })
+  
+  # Choix d'axes
+  output$acp_eigenvalues <- renderPlot({
+    req(reactive_acp$result)
+    
+    # Extraction des valeurs propres
+    valeurspropres <- reactive_acp$result$eig
+    
+    # Création du barplot
+    barplot(valeurspropres[, 2], names.arg = 1:nrow(valeurspropres),
+            main = "Pourcentage de la variance expliquée par chaque composante",
+            xlab = "Composantes principales",
+            ylab = "Pourcentage de variance expliquée",
+            col = "steelblue")
+    
+    # Ajout de la ligne connectée
+    lines(x = 1:nrow(valeurspropres), valeurspropres[, 2], 
+          type = "b", pch = 19, col = "red")
+  })
+  
+  # Graphique des contributions des variables à PC1
+  output$contrib_PC1 <- renderPlot({
+    req(reactive_acp$result)  
+    fviz_contrib(reactive_acp$result, choice = "var", axes = 1, top = 10)
+  })
+  
+  # Graphique des contributions des variables à PC2
+  output$contrib_PC2 <- renderPlot({
+    req(reactive_acp$result)  
+    fviz_contrib(reactive_acp$result, choice = "var", axes = 2, top = 10)
+  })
+  
+  # cos² a PC1
+  output$cos2_PC1 <- renderPlot({
+    req(reactive_acp$result)
+    fviz_cos2(reactive_acp$result, choice = "var", axes = 1, top = 10) +
+      ggtitle("Qualité de la représentation des variables sur la PC1 (cos²)")
+  })
+  
+  # cos² a PC2
+  output$cos2_PC2 <- renderPlot({
+    req(reactive_acp$result)
+    fviz_cos2(reactive_acp$result, choice = "var", axes = 2, top = 10) +
+      ggtitle("Qualité de la représentation des variables sur la PC2 (cos²)")
+  })
+  
+  # matrice cov
+  output$var_cov_matrix <- renderPrint({
+    req(reactive_acp$selected_vars)
+    print(get_S(df[ , reactive_acp$selected_vars]))
+  })
+  
+  output$eigen_values <- renderPrint({
+    req(reactive_acp$selected_vars)
+    
+    # Récupération des valeurs propres
+    lambdas <- get_LambdasAndEigenVectors(df[, reactive_acp$selected_vars])$lambdas
+    
+    # Calcul du pourcentage de variance expliquée
+    variance_percentage <- (lambdas / sum(lambdas)) * 100
+    
+    # Calcul du pourcentage de variance cumulée
+    cumulative_variance <- cumsum(variance_percentage)
+    
+    # Création du tableau
+    eigen_table <- data.frame(
+      "eigenvalue" = lambdas,
+      "percentage of variance" = variance_percentage,
+      "cumulative percentage of variance" = cumulative_variance
+    )
+    
+    print(eigen_table)
+  })
+  
+  output$eigen_vectors <- renderPrint({
+    req(reactive_acp$selected_vars)
+    print(get_LambdasAndEigenVectors(df[ , reactive_acp$selected_vars])$vectors)
+  })
+  
+  output$inertia_percentage <- renderPrint({
+    req(reactive_acp$selected_vars)
+    print(get_InertiaAxes(df[ , reactive_acp$selected_vars]))
+  })
+  
+  # Sélectionne ou désélectionne toutes les variables pour l'ACP -----
+  observeEvent(input$select_all_AC, {
+    current_selection <- input$acp_vars  
+    if (length(current_selection) < length(quant_vars_actives)) {
+      updateSelectInput(session, "acp_vars", selected = quant_vars_actives)
+    } else {
+      updateSelectInput(session, "acp_vars", selected = character(0))
+    }
+  })
+  
+  # Génère une matrice de corrélation entre les variables sélectionnées -----
+  output$corr_plot <- renderPlot({
+    req(filtered_data(), input$corr_vars)  
+    
+    # Vérifie que les variables sélectionnées existent dans filtered_data() -----
+    valid_vars <- intersect(input$corr_vars, colnames(filtered_data()))
+    if (length(valid_vars) < 2) {
+      plot.new()
+      text(0.5, 0.5, "Veuillez sélectionner au moins deux variables valides", col = "red", cex = 1.5)
+      return()
+    }
+    
+    # Sélection des données quantitatives -----
+    corr_data <- filtered_data()[, valid_vars, drop = FALSE]
+    
+    # Calcul de la matrice de corrélation -----
+    corr_matrix <- cor(corr_data, use = "complete.obs")
+    
+    # Options de personnalisation (avec valeurs par défaut si non cochées) -----
+    corr_method <- ifelse(input$customize_corr, input$corr_method, "circle")
+    corr_type <- ifelse(input$customize_corr, input$corr_type, "full")
+    corr_order <- ifelse(input$customize_corr, input$corr_order, "original")
+    
+    # Affichage de la matrice de corrélation -----
+    corrplot(corr_matrix, method = corr_method, type = corr_type, order = corr_order,
+             tl.cex = 0.8, cl.cex = 0.8)
+  })
+  
+  # Reactive expression for the selected dataset
+  df_select <- reactive({
+    df
+  })
 
-# Function to train a Random Forest model
-train_random_forest <- function(data, target) {
-  model <- randomForest(as.formula(paste(target, "~ .")), data = data)
-  return(model)
-}
-
-# Function to train an SVM model
-train_svm <- function(data, target) {
-  model <- svm(as.formula(paste(target, "~ .")), data = data)
-  return(model)
-}
-
-# Function to evaluate the model
-evaluate_model <- function(model, data, target) {
-  predictions <- predict(model, data)
-  confusionMatrix(predictions, data[[target]])
-}
-
-
-# Function to train a KNN model
-train_knn <- function(data, target, k) {
-  train_data <- data[-which(names(data) == target)]
-  train_target <- data[[target]]
-  knn_model <- knn(train = train_data, test = train_data, cl = train_target, k = k)
-  return(knn_model)
-}
-
-# Function to perform k-means clustering
-perform_kmeans <- function(data, centers) {
-  kmeans_model <- kmeans(data, centers)
-  return(kmeans_model)
-}
-
-# Function to evaluate the KNN model
-evaluate_knn <- function(model, data, target) {
-  predictions <- model
-  confusionMatrix(predictions, data[[target]])
-}
-
-# Chargement des données -----
-# Assurez-vous que les chemins sont corrects et adaptés à vos fichiers
-df <- read.csv2("data/CG_PC.csv",sep=",",dec=".")
-#Identifier les doublons selon les trois premières colonnes
-duplicated_rows <- df[duplicated(df[, 1:3]) | duplicated(df[, 1:3], fromLast = TRUE), ]
-df<- df[!duplicated(df[, 1:3]), ]
-# Préparation et nettoyage des données -----
-# Transformation des colonnes en facteurs (si applicable)
-fact <- c(1:2,11:14)  # Indices des colonnes à transformer en facteurs (ajustez selon vos données)
-df[fact] <- lapply(df[, fact], as.factor)
-
-# Création des listes pour les variables quantitatives et qualitatives -----
-# Variables quantitatives (numériques)
-quant_vars <- names(df)[sapply(df, is.numeric)]
-
-# Variables qualitatives (facteurs ou catégoriques)
-qual_vars <- names(df)[sapply(df, is.factor)]
-
-# Variables actives pour l'ACP (quantitatives uniquement)
-quant_vars_actives <- quant_vars  # Modifiez ici si vous voulez limiter les variables spécifiques à l'ACP.
-
-# Variables catégorielles pour l'ACP
-cat_vars <- qual_vars  # Utilisé pour ajouter des catégories dans certaines visualisations de l'ACP.
-
-# Préparation pour les filtres dans la barre latérale -----
-# Extraction des valeurs uniques pour les champs nécessaires
-IGP <- unique(df$igp)  # Assurez-vous que "igp" est une colonne existante
-marque <- unique(df$manufacturer)  # Assurez-vous que "manufacturer" est une colonne existante
-
-# Gestion des valeurs manquantes -----
-# Si vous voulez supprimer ou manipuler les valeurs manquantes, vous pouvez utiliser :
-# df <- na.omit(df)  # Supprime les lignes avec des valeurs manquantes
-# Ou bien, remplissez les valeurs manquantes avec une valeur par défaut :
-# df[is.na(df)] <- 0
-
-# Notes :
-# 1. Assurez-vous que les colonnes mentionnées dans `fact`, `igp` et `manufacturer` existent dans vos données.
-# 2. Vérifiez les données pour éviter les erreurs dues à des types de données incorrects (e.g., colonnes numériques mal importées).
-# 3. Modifiez `quant_vars_actives` et `cat_vars` si vous voulez restreindre les variables disponibles pour certaines analyses.
-
-# Options supplémentaires pour visualisation -----
-# (Optionnel) Vous pouvez ajouter des palettes de couleurs ou des paramètres globaux pour ggplot2, par exemple :
-theme_set(theme_minimal())  # Définit un thème global pour les graphiques
-
-# Fonction pour calculer la matrice de variances-covariances
-get_S <- function(data) {
-  if (!is.data.frame(data)) {
-    stop("Les données doivent être sous forme de data.frame")
+  
+  # Filter data based on selected brand and year range
+  filtered_evolution_data <- reactive({
+    req(input$selected_brand, input$year_range)
+    df %>%
+      filter(manufacturer == input$selected_brand & releaseYear >= input$year_range[1] & releaseYear <= input$year_range[2])
+  })
+  
+  # Function to generate the evolution plot for a given characteristic
+  generate_evolution_plot <- function(data, characteristic, brand) {
+    ggplot(data, aes(x = releaseYear, y = !!sym(characteristic))) +
+      geom_line() +
+      labs(title = paste("Évolution de", characteristic, "pour", brand),
+           x = "Année de sortie",
+           y = "Valeur des caractéristiques") +
+      theme_minimal() +
+      scale_x_continuous(breaks = seq(min(data$releaseYear), max(data$releaseYear), by = 1)) +
+      scale_y_continuous(breaks = seq(0, max(data[[characteristic]], na.rm = TRUE), by = 20))
   }
   
-  # Vérifier qu'il y a des colonnes numériques pour le calcul
-  numeric_data <- data[sapply(data, is.numeric)]
-  if (ncol(numeric_data) == 0) {
-    stop("Aucune variable quantitative valide trouvée pour calculer la matrice des variances-covariances")
-  }
+  # Generate the evolution plot for memClock
+  output$evolution_plot_memClock <- renderPlotly({
+    req(filtered_evolution_data())
+    data <- filtered_evolution_data()
+    p <- generate_evolution_plot(data, "memClock", input$selected_brand)
+    ggplotly(p)
+  })
   
-  # Calculer la matrice de variances-covariances
-  return(cov(numeric_data, use = "complete.obs"))
-}
-
-# Fonction pour calculer les valeurs propres et les vecteurs propres
-get_LambdasAndEigenVectors <- function(data) {
-  if (!is.data.frame(data)) {
-    stop("Les données doivent être sous forme de data.frame")
-  }
+  # Generate the evolution plot for unifiedShader
+  output$evolution_plot_unifiedShader <- renderPlotly({
+    req(filtered_evolution_data())
+    data <- filtered_evolution_data()
+    p <- generate_evolution_plot(data, "unifiedShader", input$selected_brand)
+    ggplotly(p)
+  })
   
-  # Vérifier qu'il y a des colonnes numériques
-  numeric_data <- data[sapply(data, is.numeric)]
-  if (ncol(numeric_data) == 0) {
-    stop("Aucune variable quantitative valide trouvée pour calculer les valeurs propres")
-  }
+  # Generate the evolution plot for tmu
+  output$evolution_plot_tmu <- renderPlotly({
+    req(filtered_evolution_data())
+    data <- filtered_evolution_data()
+    p <- generate_evolution_plot(data, "tmu", input$selected_brand)
+    ggplotly(p)
+  })
   
-  # Calcul de la décomposition en valeurs propres
-  eigen_res <- eigen(cov(numeric_data, use = "complete.obs"))
-  return(list(lambdas = eigen_res$values, vectors = eigen_res$vectors))
-}
-
-# Fonction pour calculer le pourcentage d'inertie totale
-get_InertiaAxes <- function(data) {
-  eigen_res <- get_LambdasAndEigenVectors(data)
-  inertia_percentages <- (eigen_res$lambdas / sum(eigen_res$lambdas)) * 100
-  return(inertia_percentages)
-}
-
-# Fonction pour réaliser l'ACP
-actives <- df[, c(3:10)]
-# Normalisation des variables quantitatives
-data_scaled <- as.data.frame(scale(actives[, -1]))
-quant_vars_actives <- colnames(actives[, -1])
-
-update_acp <- function(input, df) {
-  if (!is.null(input$acp_vars) && length(input$acp_vars) > 1) {
-    reactive_acp$selected_vars <- input$acp_vars
-    reactive_acp$result <- doitPerformACP(df, input$acp_vars)
-  } else {
-    reactive_acp$result <- NULL
-    reactive_acp$selected_vars <- NULL
-  }
-}
-
-doitPerformACP <- function(data, vars) {
-  df_selected <- data[, vars, drop = FALSE]
-  df_selected <- scale(df_selected)  # Centrage et réduction
-  row.names(df_selected) <- row.names(data)
-  acp_result <- PCA(df_selected, scale.unit = TRUE, graph = FALSE)
-  return(acp_result)
-}
-
-reactive_acp <- reactiveValues(result = NULL, selected_vars = NULL)
-
-plot_acp_ind <- function(acp_result, df, color_var, contrib_value) {
-  if (!is.null(color_var) && color_var %in% names(df) && color_var != "") {
-    # Coloration par variable catégorielle si sélectionnée
-    fviz_pca_ind(acp_result,
-                 repel = TRUE,
-                 pointsize = 1,  # Réduire la taille des points
-                 habillage = df[[color_var]],  # Utilisation de la variable catégorielle
-                 addEllipses = TRUE,  # Ajout des ellipses de concentration
-                 palette = "jco", 
-                 alpha.ind = 0.5,  # Transparence des points
-                 select.ind = list(contrib = contrib_value))  # Sélectionner les individus avec les plus grandes contributions
-  } else {
-    # Coloration par cos2 si aucune variable catégorielle n'est sélectionnée
-    fviz_pca_ind(acp_result,
-                 repel = TRUE,
-                 pointsize = 1,  # Réduire la taille des points
-                 col.ind = "cos2",  # Rétablir la coloration basée sur cos2
-                 gradient.cols = c("#00AFBB", "black", "red"), 
-                 alpha.ind = 0.5,  # Transparence des points
-                 select.ind = list(contrib = contrib_value))  # Sélectionner les individus avec les plus grandes contributions
-  }
-}
-
-plot_acp_var <- function(acp_result, selected_vars) {
-  fviz_pca_var(acp_result, 
-               repel = TRUE, 
-               col.var = "contrib", 
-               gradient.cols = c("#00AFBB", "black", "red"),
-               select.var = list(name = selected_vars))  # Sélectionner uniquement les variables actives choisies
-}
-
-plot_acp_biplot <- function(acp_result, df, color_var, selected_vars, contrib_value) {
-  if (!is.null(color_var) && color_var %in% names(df) && color_var != "") {
-    fviz_pca_biplot(acp_result, 
-                    repel = TRUE, 
-                    label = "all", 
-                    habillage = df[[color_var]],  # Coloration par variable catégorielle
-                    select.var = list(name = selected_vars),  # Sélectionner les variables choisies
-                    addEllipses = TRUE, 
-                    arrows = TRUE,  # Affiche bien les vecteurs des variables
-                    palette = "jco",
-                    select.ind = list(contrib = contrib_value))
-  } else {
-    fviz_pca_biplot(acp_result, 
-                    repel = TRUE, 
-                    label = "all", 
-                    col.ind = "cos2",  # Coloration des individus selon cos2
-                    gradient.cols = c("#00AFBB", "black", "red"),
-                    select.var = list(name = selected_vars), 
-                    select.ind = list(contrib = contrib_value),
-                    arrows = TRUE)  # Forcer l'affichage des vecteurs
-  }
+  # Generate the evolution plot for top
+  output$evolution_plot_top <- renderPlotly({
+    req(filtered_evolution_data())
+    data <- filtered_evolution_data()
+    p <- generate_evolution_plot(data, "rop", input$selected_brand)
+    ggplotly(p)
+  })
+  
+  # Generate the evolution plot for memSize
+  output$evolution_plot_memSize <- renderPlotly({
+    req(filtered_evolution_data())
+    data <- filtered_evolution_data()
+    p <- generate_evolution_plot(data, "memSize", input$selected_brand)
+    ggplotly(p)
+  })
+  
+  # Generate the evolution plot for memBusWidth
+  output$evolution_plot_memBusWidth <- renderPlotly({
+    req(filtered_evolution_data())
+    data <- filtered_evolution_data()
+    p <- generate_evolution_plot(data, "memBusWidth", input$selected_brand)
+    ggplotly(p)
+  })
+  
+  # Generate the evolution plot for gpuClock
+  output$evolution_plot_gpuClock <- renderPlotly({
+    req(filtered_evolution_data())
+    data <- filtered_evolution_data()
+    p <- generate_evolution_plot(data, "gpuClock", input$selected_brand)
+    ggplotly(p)
+    
+  })
+  
 }
