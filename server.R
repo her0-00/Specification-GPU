@@ -298,7 +298,20 @@ server <- function(input, output, session) {
     df %>%
       filter(manufacturer == input$selected_brand & releaseYear >= input$year_range[1] & releaseYear <= input$year_range[2])
   })
+  # Function to generate a specified number of colors
+  generate_colors <- function(n) {
+    colors <- grDevices::rainbow(n)
+    return(colors)
+  }
   
+  # Your existing code...
+  
+  # Function to generate the evolution plot for a given characteristic
+  generate_evolution_plot <- function(data, characteristic, brand) {
+    n_colors <- length(unique(data$productName))
+    colors <- generate_colors(n_colors)
+    
+ 
   # Function to generate the evolution plot for a given characteristic
   generate_evolution_plot <- function(data, characteristic, brand) {
     n_colors <- length(unique(data$productName))
