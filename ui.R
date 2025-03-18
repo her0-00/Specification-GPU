@@ -12,7 +12,7 @@ ui <- shinyUI(dashboardPage(
       menuItem("ACP", tabName = "acp", icon = icon("chart-line")),
       menuItem("Etude Technique", tabName = "Etude_technique", icon = icon("cogs")),
       menuItem("Matrice de Corrélation", tabName = "correlation", icon = icon("th")),
-      menuItem("Classification et ML", tabName = "classification", icon = icon("brain")),
+      menuItem("Clustering", tabName = "clustering", icon = icon("brain")),
       menuItem("Évolution des GPU", tabName = "evolution", icon = icon("line-chart"))
     ),
     selectInput(
@@ -319,29 +319,9 @@ ui <- shinyUI(dashboardPage(
       ),
       
       # Onglet Classification et ML -----
-      tabItem(tabName = "classification",
+      tabItem(tabName = "clustering",
               fluidRow(
-                box(
-                  title = "Sélectionnez les variables", status = "primary", solidHeader = TRUE, width = 12,
-                  selectInput("target_var", "Variable cible :", 
-                              choices = colnames(df), 
-                              selected = colnames(df)[1]),
-                  selectInput("algo", "Algorithme :", 
-                              choices = c("Random Forest", "SVM", "KNN", "K-means"), 
-                              selected = "Random Forest"),
-                  conditionalPanel(
-                    condition = "input.algo == 'KNN'",
-                    numericInput("k_value", "Valeur de k :", value = 3, min = 1)
-                  ),
-                  conditionalPanel(
-                    condition = "input.algo == 'K-means'",
-                    numericInput("centers", "Nombre de clusters :", value = 3, min = 1)
-                  ),
-                  actionButton("train_model", "Entraîner le modèle", class = "btn-success")
-                ),
-                box(title = "Résumé du modèle", status = "primary", solidHeader = TRUE, width = 12, verbatimTextOutput("model_summary")),
-                box(title = "Évaluation du modèle", status = "primary", solidHeader = TRUE, width = 12, verbatimTextOutput("model_evaluation"))
-              )
+              
       ),
       #Onglet XXXX
       tabItem(tabName = "evolution",
