@@ -298,90 +298,71 @@ server <- function(input, output, session) {
     df %>%
       filter(manufacturer == input$selected_brand & releaseYear >= input$year_range[1] & releaseYear <= input$year_range[2])
   })
-  # Function to generate a specified number of colors
-  generate_colors <- function(n) {
-    colors <- grDevices::rainbow(n)
-    return(colors)
-  }
-  
-  # Your existing code...
-  
-  # Function to generate the evolution plot for a given characteristic
-  generate_evolution_plot <- function(data, characteristic, brand) {
-    n_colors <- length(unique(data$productName))
-    colors <- generate_colors(n_colors)
-    
- 
-  # Function to generate the evolution plot for a given characteristic
-  generate_evolution_plot <- function(data, characteristic, brand) {
-    n_colors <- length(unique(data$productName))
-    colors <- generate_colors(n_colors)
-    
-    ggplot(data, aes(x = releaseYear, y = !!sym(characteristic), color = productName)) +
-      geom_line() +
-      geom_text(aes(label = productName), check_overlap = TRUE, hjust = 1.1, vjust = 1.1, size = 2.5) +
-      labs(title = paste("Évolution de", characteristic, "pour", brand),
-           x = "Année de sortie",
-           y = "Valeur des caractéristiques") +
-      theme_minimal() +
-      scale_x_continuous(breaks = seq(min(data$releaseYear), max(data$releaseYear), by = 1)) +
-      scale_y_continuous(breaks = seq(0, max(data[[characteristic]], na.rm = TRUE), by = 20)) +
-      scale_color_manual(values = colors)
-  }
-  
-  # Generate the evolution plot for memClock
-  output$evolution_plot_memClock <- renderPlotly({
-    req(filtered_evolution_data())
-    data <- filtered_evolution_data()
-    p <- generate_evolution_plot(data, "memClock", input$selected_brand)
-    ggplotly(p)
-  })
-  
-  # Generate the evolution plot for unifiedShader
-  output$evolution_plot_unifiedShader <- renderPlotly({
-    req(filtered_evolution_data())
-    data <- filtered_evolution_data()
-    p <- generate_evolution_plot(data, "unifiedShader", input$selected_brand)
-    ggplotly(p)
-  })
-  
-  # Generate the evolution plot for tmu
-  output$evolution_plot_tmu <- renderPlotly({
-    req(filtered_evolution_data())
-    data <- filtered_evolution_data()
-    p <- generate_evolution_plot(data, "tmu", input$selected_brand)
-    ggplotly(p)
-  })
-  
-  # Generate the evolution plot for top
-  output$evolution_plot_top <- renderPlotly({
-    req(filtered_evolution_data())
-    data <- filtered_evolution_data()
-    p <- generate_evolution_plot(data, "rop", input$selected_brand)
-    ggplotly(p)
-  })
-  
-  # Generate the evolution plot for memSize
-  output$evolution_plot_memSize <- renderPlotly({
-    req(filtered_evolution_data())
-    data <- filtered_evolution_data()
-    p <- generate_evolution_plot(data, "memSize", input$selected_brand)
-    ggplotly(p)
-  })
-  
-  # Generate the evolution plot for memBusWidth
-  output$evolution_plot_memBusWidth <- renderPlotly({
-    req(filtered_evolution_data())
-    data <- filtered_evolution_data()
-    p <- generate_evolution_plot(data, "memBusWidth", input$selected_brand)
-    ggplotly(p)
-  })
-  
-  # Generate the evolution plot for gpuClock
-  output$evolution_plot_gpuClock <- renderPlotly({
-    req(filtered_evolution_data())
-    data <- filtered_evolution_data()
-    p <- generate_evolution_plot(data, "gpuClock", input$selected_brand)
-    ggplotly(p)
-  })
+ # Function to generate the evolution plot for a given characteristic
+generate_evolution_plot <- function(data, characteristic, brand) {
+  ggplot(data, aes(x = releaseYear, y = !!sym(characteristic))) +
+    geom_line() +
+    geom_text(aes(label = productName), check_overlap = TRUE, hjust = 1.1, vjust = 1.1, size = 2.5) +
+    labs(title = paste("Évolution de", characteristic, "pour", brand),
+         x = "Année de sortie",
+         y = "Valeur des caractéristiques") +
+    theme_minimal() +
+    scale_x_continuous(breaks = seq(min(data$releaseYear), max(data$releaseYear), by = 1)) +
+    scale_y_continuous(breaks = seq(0, max(data[[characteristic]], na.rm = TRUE), by = 20))
 }
+
+# Generate the evolution plot for memClock
+output$evolution_plot_memClock <- renderPlotly({
+  req(filtered_evolution_data())
+  data <- filtered_evolution_data()
+  p <- generate_evolution_plot(data, "memClock", input$selected_brand)
+  ggplotly(p)
+})
+
+# Generate the evolution plot for unifiedShader
+output$evolution_plot_unifiedShader <- renderPlotly({
+  req(filtered_evolution_data())
+  data <- filtered_evolution_data()
+  p <- generate_evolution_plot(data, "unifiedShader", input$selected_brand)
+  ggplotly(p)
+})
+
+# Generate the evolution plot for tmu
+output$evolution_plot_tmu <- renderPlotly({
+  req(filtered_evolution_data())
+  data <- filtered_evolution_data()
+  p <- generate_evolution_plot(data, "tmu", input$selected_brand)
+  ggplotly(p)
+})
+
+# Generate the evolution plot for top
+output$evolution_plot_top <- renderPlotly({
+  req(filtered_evolution_data())
+  data <- filtered_evolution_data()
+  p <- generate_evolution_plot(data, "rop", input$selected_brand)
+  ggplotly(p)
+})
+
+# Generate the evolution plot for memSize
+output$evolution_plot_memSize <- renderPlotly({
+  req(filtered_evolution_data())
+  data <- filtered_evolution_data()
+  p <- generate_evolution_plot(data, "memSize", input$selected_brand)
+  ggplotly(p)
+})
+
+# Generate the evolution plot for memBusWidth
+output$evolution_plot_memBusWidth <- renderPlotly({
+  req(filtered_evolution_data())
+  data <- filtered_evolution_data()
+  p <- generate_evolution_plot(data, "memBusWidth", input$selected_brand)
+  ggplotly(p)
+})
+
+# Generate the evolution plot for gpuClock
+output$evolution_plot_gpuClock <- renderPlotly({
+  req(filtered_evolution_data())
+  data <- filtered_evolution_data()
+  p <- generate_evolution_plot(data, "gpuClock", input$selected_brand)
+  ggplotly(p)
+})
