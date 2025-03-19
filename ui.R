@@ -19,7 +19,7 @@ ui <- shinyUI(dashboardPage(
       label = "IGP ? :",
       choices = IGP,
       selected = IGP,
-      multiple = TRUE
+      multiple = FALSE
     ),
     selectInput(
       inputId = "Marque",
