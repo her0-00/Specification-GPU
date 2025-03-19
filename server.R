@@ -9,6 +9,7 @@ server <- function(input, output, session) {
   # Filtrer les données selon les choix de l'utilisateur
   filtered_data <- reactive({
     req(input$IGP, input$Marque)
+    
     df_filtered <- df %>%
       filter(igp %in% input$IGP, manufacturer %in% input$Marque)
     
@@ -17,6 +18,28 @@ server <- function(input, output, session) {
     }
     
     df_filtered
+    
+  })
+  # Création des listes pour les variables quantitatives et qualitatives en utilisant les données filtrées
+  observe({
+    df_data <- filtered_data()
+    
+    # Variables quantitatives (numériques)
+    quant_vars <- names(df_data)[sapply(df_data, is.numeric)]
+    
+    # Variables qualitatives (facteurs ou catégoriques)
+    qual_vars <- names(df_data)[sapply(df_data, is.factor)]
+    
+    # Variables actives pour l'ACP (quantitatives uniquement)
+    quant_vars_actives <- quant_vars  # Modifiez ici si vous voulez limiter les variables spécifiques à l'ACP.
+    
+    # Variables catégorielles pour l'ACP
+    cat_vars <- qual_vars 
+    
+    updateSelectInput(session, "var_quanti", choices = quant_vars)
+    updateSelectInput(session, "var_quali", choices = qual_vars)
+    updateSelectInput(session, "acp_vars", choices = quant_vars)
+    updateSelectInput(session, "acp_cat_vars", choices = qual_vars)
   })
   
   # Filtrer les données selon la marque et la plage d'années sélectionnées
