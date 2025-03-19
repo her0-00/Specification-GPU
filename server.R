@@ -9,8 +9,14 @@ server <- function(input, output, session) {
   # Filtrer les données selon les choix de l'utilisateur
   filtered_data <- reactive({
     req(input$IGP, input$Marque)
-    df %>%
+    df_filtered <- df %>%
       filter(igp %in% input$IGP, manufacturer %in% input$Marque)
+    
+    if (input$IGP == "Yes") {
+      df_filtered <- df_filtered[, !(names(df_filtered) %in% c("memClock", "memType"))]
+    }
+    
+    df_filtered
   })
   
   # Filtrer les données selon la marque et la plage d'années sélectionnées
@@ -138,7 +144,7 @@ server <- function(input, output, session) {
   output$acp_ind_plot <- renderPlot({
     req(reactive_acp$result)
     c <- filtered_data()$manufacturer
-    plot_acp_ind(reactive_acp$result, filtered_data(), input$acp_cat_vars, input$contrib_value, c)
+    plot_acp_ind(reactive_acp$result, filtered_data(), input$acp_cat_vars, input$contrib_value)
   })
   
   # Tracer les graphiques des variables
@@ -202,7 +208,7 @@ server <- function(input, output, session) {
   # cos² a PC2
   output$cos2_PC2 <- renderPlot({
     req(reactive_acp$result)
-    fviz_cos2(reactive_acp$result, choice = "var", axes = 2, top = 10) +
+    fviz_cos2(reactive_acp[result], choice = "var", axes = 2, top = 10) +
       ggtitle("Qualité de la représentation des variables sur la PC2 (cos²)")
   })
   
