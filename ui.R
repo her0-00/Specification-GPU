@@ -202,8 +202,8 @@ ui <- shinyUI(dashboardPage(
                                     selectInput(
                                       inputId = "var_quali",
                                       label = "Choisissez une variable qualitative :",
-                                      choices = names(df)[sapply(df, is.factor)],  # Liste des variables qualitatives
-                                      selected = names(df)[sapply(df, is.factor)][1]
+                                      choices = qual_vars , # Liste des variables qualitatives
+                                      selected = qual_vars[1]
                                     ),
                                     dataTableOutput("qualitative_table")
                              )
