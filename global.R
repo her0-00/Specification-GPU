@@ -1,3 +1,4 @@
+
 # Chargement des bibliothèques nécessaires -----
 library(shiny)
 library(gganimate)
@@ -21,7 +22,7 @@ library(cluster)  # For k-means
 
 # Chargement des données -----
 # Assurez-vous que les chemins sont corrects et adaptés à vos fichiers
-df <- read.csv2("data/CG_PC.csv",sep=",",dec=".")
+df <- read.csv2("data/CG_ALL.csv",sep=",",dec=".")
 #Identifier les doublons selon les trois premières colonnes
 duplicated_rows <- df[duplicated(df[, 1:3]) | duplicated(df[, 1:3], fromLast = TRUE), ]
 df<- df[!duplicated(df[, 1:3]), ]
@@ -96,25 +97,25 @@ actives <- df[, c(3:10)]
 data_scaled <- as.data.frame(scale(actives[, -1]))
 quant_vars_actives <- colnames(actives[, -1])
 update_acp <- function(input, df) {
- if (!is.null(input$acp_vars) && length(input$acp_vars) > 1) {
+  if (!is.null(input$acp_vars) && length(input$acp_vars) > 1) {
     reactive_acp$selected_vars <- input$acp_vars
     reactive_acp$result <- doitPerformACP(df, input$acp_vars)
-   } else {
-           reactive_acp$result <- NULL
-         reactive_acp$selected_vars <- NULL
-       }
-   }
- 
- doitPerformACP <- function(data, vars) {
- df_selected <- data[, vars, drop = FALSE]
-   df_selected <- scale(df_selected)  # Centrage et réduction
-    row.names(df_selected) <- row.names(data)
-      acp_result <- PCA(df_selected, scale.unit = TRUE, graph = FALSE)
-   return(acp_result)
-   }
- reactive_acp <- reactiveValues(result = NULL, selected_vars = NULL)
+  } else {
+    reactive_acp$result <- NULL
+    reactive_acp$selected_vars <- NULL
+  }
+}
 
-plot_acp_ind <- function(acp_result, df, color_var, contrib_value) {
+doitPerformACP <- function(data, vars) {
+  df_selected <- data[, vars, drop = FALSE]
+  df_selected <- scale(df_selected)  # Centrage et réduction
+  row.names(df_selected) <- row.names(data)
+  acp_result <- PCA(df_selected, scale.unit = TRUE, graph = FALSE)
+  return(acp_result)
+}
+reactive_acp <- reactiveValues(result = NULL, selected_vars = NULL)
+
+plot_acp_ind <- function(acp_result, df,color_var, contrib_value,c) {
   if (!is.null(color_var) && color_var %in% names(df) && color_var != "") {
     # Coloration par variable catégorielle si sélectionnée
     fviz_pca_ind(acp_result,
@@ -123,19 +124,19 @@ plot_acp_ind <- function(acp_result, df, color_var, contrib_value) {
                  habillage = df[[color_var]],  # Utilisation de la variable catégorielle
                  addEllipses = TRUE,  # Ajout des ellipses de concentration
                  palette = "jco", 
-                 alpha.ind = 0.5,  # Transparence des points
+               alpha.ind = 0.5,  # Transparence des points
                  select.ind = list(cos2 = contrib_value))  # Sélectionner les individus avec les plus grandes contributions
   } else {
     # Coloration par cos2 si aucune variable catégorielle n'est sélectionnée
     fviz_pca_ind(acp_result,
                  repel = TRUE,
                  pointsize = 1,  # Réduire la taille des points
-                 col.ind = df$manufacturer,  # Rétablir la coloration basée sur cos2
+                 col.ind = c,  # Rétablir la coloration basée sur la colonne manufacturer
                  gradient.cols = c("#00AFBB", "black", "red"), 
                  alpha.ind = 0.5,  # Transparence des points
-                 select.ind = list(cos2= contrib_value))  # Sélectionner les individus avec les plus grandes contributions
+                 select.ind = list(cos2 = contrib_value))  # Sélectionner les individus avec les plus grandes contributions
   }
-}
+}  
 
 plot_acp_var <- function(acp_result, selected_vars) {
   fviz_pca_var(acp_result, 
