@@ -58,7 +58,7 @@ server <- function(input, output, session) {
   # HISTOGRAMME
   output$histogram <- renderPlotly({
     req(input$var_quanti)  
-    p <- ggplot(df, aes_string(x = input$var_quanti)) +
+    p <- ggplot(filtered_data(), aes_string(x = input$var_quanti)) +
       geom_histogram(binwidth = 10, fill = "blue", color = "black", alpha = 0.7) +
       labs(
         title = paste("Histogramme de", input$var_quanti),
@@ -68,12 +68,12 @@ server <- function(input, output, session) {
     ggplotly(p)  # Conversion en graphique interactif
   })
   
-  #boxplot
+  # Boxplot
   output$boxplot <- renderPlotly({
     req(input$var_quanti)  # Vérification qu'une variable quantitative est choisie
     
     # Création du boxplot
-    p <- ggplot(df, aes_string(y = input$var_quanti)) +
+    p <- ggplot(filtered_data(), aes_string(y = input$var_quanti)) +
       geom_boxplot(fill = "orange", color = "black", alpha = 0.7) +
       labs(
         title = paste("Boxplot de", input$var_quanti),
@@ -104,7 +104,6 @@ server <- function(input, output, session) {
       updateSelectInput(session, "acp_vars", selected = character(0))
     }
   })
-  
   
   # Exécution de l'ACP -----
   observeEvent(input$run_acp, {
@@ -137,23 +136,24 @@ server <- function(input, output, session) {
   
   # Affichage des résultats de l'ACP
   output$acp_ind_plot <- renderPlot({
-    req(reactive_acp$result)  # Vérifier que l'ACP a bien été réalisée
-    plot_acp_ind(reactive_acp$result,df, input$acp_cat_vars, input$contrib_value)
+    req(reactive_acp$result)
+    c <- filtered_data()$manufacturer
+    plot_acp_ind(reactive_acp$result, filtered_data(), input$acp_cat_vars, input$contrib_value, c)
   })
   
   # Tracer les graphiques des variables
   output$acp_var_plot <- renderPlot({
-    req(reactive_acp$result)  # S'assurer que l'ACP a bien été réalisée
+    req(reactive_acp$result)
     plot_acp_var(reactive_acp$result, input$acp_vars)
   })
   
   observeEvent(input$apply_cat, {
-    update_acp(input, df)
+    update_acp(input, filtered_data())
   })
   
   output$biplot <- renderPlot({
-    req(reactive_acp$result)  # Vérifier que l'ACP a bien été réalisée
-    plot_acp_biplot(reactive_acp$result, df, input$acp_cat_vars, input$acp_vars, input$contrib_value)
+    req(reactive_acp$result)
+    plot_acp_biplot(reactive_acp$result, filtered_data(), input$acp_cat_vars, input$acp_vars, input$contrib_value)
   })
   
   output$acp_results_text <- renderPrint({
@@ -182,13 +182,13 @@ server <- function(input, output, session) {
   
   # Graphique des contributions des variables à PC1
   output$contrib_PC1 <- renderPlot({
-    req(reactive_acp$result)  
+    req(reactive_acp$result)
     fviz_contrib(reactive_acp$result, choice = "var", axes = 1, top = 10)
   })
   
   # Graphique des contributions des variables à PC2
   output$contrib_PC2 <- renderPlot({
-    req(reactive_acp$result)  
+    req(reactive_acp$result)
     fviz_contrib(reactive_acp$result, choice = "var", axes = 2, top = 10)
   })
   
@@ -206,17 +206,17 @@ server <- function(input, output, session) {
       ggtitle("Qualité de la représentation des variables sur la PC2 (cos²)")
   })
   
-  # matrice cov
+  # Matrice de covariance
   output$var_cov_matrix <- renderPrint({
     req(reactive_acp$selected_vars)
-    print(get_S(df[ , reactive_acp$selected_vars]))
+    print(get_S(filtered_data()[ , reactive_acp$selected_vars]))
   })
   
   output$eigen_values <- renderPrint({
     req(reactive_acp$selected_vars)
     
     # Récupération des valeurs propres
-    lambdas <- get_LambdasAndEigenVectors(df[, reactive_acp$selected_vars])$lambdas
+    lambdas <- get_LambdasAndEigenVectors(filtered_data()[, reactive_acp$selected_vars])$lambdas
     
     # Calcul du pourcentage de variance expliquée
     variance_percentage <- (lambdas / sum(lambdas)) * 100
@@ -236,12 +236,12 @@ server <- function(input, output, session) {
   
   output$eigen_vectors <- renderPrint({
     req(reactive_acp$selected_vars)
-    print(get_LambdasAndEigenVectors(df[ , reactive_acp$selected_vars])$vectors)
+    print(get_LambdasAndEigenVectors(filtered_data()[ , reactive_acp$selected_vars])$vectors)
   })
   
   output$inertia_percentage <- renderPrint({
     req(reactive_acp$selected_vars)
-    print(get_InertiaAxes(df[ , reactive_acp$selected_vars]))
+    print(get_InertiaAxes(filtered_data()[ , reactive_acp$selected_vars]))
   })
   
   # Sélectionne ou désélectionne toutes les variables pour l'ACP -----
@@ -284,14 +284,14 @@ server <- function(input, output, session) {
   
   # Reactive expression for the selected dataset
   df_select <- reactive({
-    df
+    filtered_data()
   })
-
+  
   
   # Filter data based on selected brand and year range
   filtered_evolution_data <- reactive({
     req(input$selected_brand, input$year_range)
-    df %>%
+    filtered_data() %>%
       filter(manufacturer == input$selected_brand & releaseYear >= input$year_range[1] & releaseYear <= input$year_range[2])
   })
   
