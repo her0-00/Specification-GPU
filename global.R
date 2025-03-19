@@ -115,7 +115,7 @@ doitPerformACP <- function(data, vars) {
 }
 reactive_acp <- reactiveValues(result = NULL, selected_vars = NULL)
 
-plot_acp_ind <- function(acp_result, df,color_var, contrib_value,c) {
+plot_acp_ind <- function(acp_result, df,color_var, contrib_value) {
   if (!is.null(color_var) && color_var %in% names(df) && color_var != "") {
     # Coloration par variable catégorielle si sélectionnée
     fviz_pca_ind(acp_result,
@@ -131,7 +131,7 @@ plot_acp_ind <- function(acp_result, df,color_var, contrib_value,c) {
     fviz_pca_ind(acp_result,
                  repel = TRUE,
                  pointsize = 1,  # Réduire la taille des points
-                 col.ind = c,  # Rétablir la coloration basée sur la colonne manufacturer
+                 col.ind = "cos2",  # Rétablir la coloration basée sur la colonne manufacturer
                  gradient.cols = c("#00AFBB", "black", "red"), 
                  alpha.ind = 0.5,  # Transparence des points
                  select.ind = list(cos2 = contrib_value))  # Sélectionner les individus avec les plus grandes contributions
