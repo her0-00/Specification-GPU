@@ -31,18 +31,6 @@ df<- df[!duplicated(df[, 1:3]), ]
 fact <- c(1:2,11:14)  # Indices des colonnes à transformer en facteurs (ajustez selon vos données)
 df[fact] <- lapply(df[, fact], as.factor)
 
-# Création des listes pour les variables quantitatives et qualitatives -----
-# Variables quantitatives (numériques)
-quant_vars <- names(df)[sapply(df, is.numeric)]
-
-# Variables qualitatives (facteurs ou catégoriques)
-qual_vars <- names(df)[sapply(df, is.factor)]
-
-# Variables actives pour l'ACP (quantitatives uniquement)
-quant_vars_actives <- quant_vars  # Modifiez ici si vous voulez limiter les variables spécifiques à l'ACP.
-
-# Variables catégorielles pour l'ACP
-cat_vars <- qual_vars  # Utilisé pour ajouter des catégories dans certaines visualisations de l'ACP.
 
 # Préparation pour les filtres dans la barre latérale -----
 # Extraction des valeurs uniques pour les champs nécessaires
