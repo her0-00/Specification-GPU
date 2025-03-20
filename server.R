@@ -3,15 +3,14 @@ server <- function(input, output, session) {
   # Sélectionner toutes les options dans les filtres
   observeEvent(input$select_all, {
     updateSelectInput(session, "IGP", selected = IGP)
-    updateSelectInput(session, "Marque", selected = marque)
   })
   
   # Filtrer les données selon les choix de l'utilisateur
   filtered_data <- reactive({
-    req(input$IGP, input$Marque)
+    req(input$IGP)
     
     df_filtered <- df %>%
-      filter(igp %in% input$IGP, manufacturer %in% input$Marque)
+      filter(igp %in% input$IGP)
     
     if (input$IGP == "Yes") {
       df_filtered <- df_filtered[, !(names(df_filtered) %in% c("memClock", "memType"))]
@@ -26,17 +25,17 @@ server <- function(input, output, session) {
     df_data <- filtered_data()
     
     # Variables quantitatives (numériques)
-    quant_vars <- names(df_data)[sapply(df_data, is.numeric)]
+    quant_vars <- names(df_data)[sapply(df_data, is.numeric)][2:8]
     
     # Variables qualitatives (facteurs ou catégoriques)
-    qual_vars <- names(df_data)[sapply(df_data, is.factor)]
+    qual_vars <- names(df_data)[sapply(df, is.factor)]
     
     # Variables actives pour l'ACP (quantitatives uniquement)
     quant_vars_actives <- quant_vars  # Modifiez ici si vous voulez limiter les variables spécifiques à l'ACP.
     
     # Variables catégorielles pour l'ACP
     cat_vars <- qual_vars 
-  
+    
     updateSelectInput(session, "var_quanti", choices = quant_vars)
     updateSelectInput(session, "var_quali", choices = qual_vars)
     updateSelectInput(session, "acp_vars", choices = quant_vars)
@@ -170,14 +169,7 @@ server <- function(input, output, session) {
              yaxis = list(title = "Nombre d'occurrences"))
   })
   
-  # Visualisation des répartitions qualitatives
-  output$qualitative_table <- renderDataTable({
-    req(input$var_quali)
-    filtered_data() %>%
-      group_by(.data[[input$var_quali]]) %>%
-      summarise(Count = n()) %>%
-      datatable(options = list(pageLength = 5))
-  })
+
   
   # Implémentation de l'ACP
   
@@ -243,7 +235,7 @@ server <- function(input, output, session) {
       print(num_clusters)  # Print number of clusters
       
       # Perform clustering with the optimal number of clusters
-      cl2 <- kmeans(x = df_ACP_1, centers = num_clusters, nstart = 100)
+      cl2 <- kmeans(x = df_ACP_1, centers = 5, nstart = 100)
       print("Clustering Result (cl2):")
       print(cl2)  # Print clustering result
       # Add cluster number to the filtered_acp_data
@@ -265,6 +257,45 @@ server <- function(input, output, session) {
                x = "PC1",
                y = "PC2")
       })
+      # Moyennes techniques par cluster
+      output$kpiCluster <- renderTable({
+        filtered_acp_data %>%
+          group_by(Cluster) %>%
+          summarise(
+            `Moyenne VRAM (Go)` = round(mean(memSize, na.rm = TRUE), 1),
+            `Moyenne GPU Clock (MHz)` = round(mean(gpuClock, na.rm = TRUE), 0),
+            `Moyenne memBusWidth (bits)` = round(mean(memBusWidth, na.rm = TRUE), 0),
+            `Moyenne unifiedShader` = round(mean(unifiedShader, na.rm = TRUE), 0),
+            `Moyenne memClock (MHz)` = round(mean(memClock, na.rm = TRUE), 0),
+            `Moyenne année de sortie` = round(mean(releaseYear, na.rm = TRUE), 0),
+            `Cartes dans ce cluster` = n()
+          ) %>%
+          mutate(`Profil recommandé` = case_when(
+            Cluster == 1 ~ "Dev IA Grand Public",
+            Cluster == 2 ~ "Console de jeux",
+            Cluster == 3 ~ "Performances Modérées pour Usage Général",
+            Cluster == 4 ~ "Haut de Gamme pour Professionnels et Gaming",
+            Cluster == 5 ~ "Calcul Intensif et Data Center",
+            TRUE ~ "Autre"
+          ))
+      })
+      output$topCardsPerCluster <- renderTable({
+        filtered_acp_data %>%
+          group_by(Cluster) %>%
+          arrange(desc(memSize + gpuClock + unifiedShader)) %>%  # critère perf combiné
+          slice(1:3) %>%
+          select(Cluster, productName, manufacturer, memSize, gpuClock, unifiedShader)
+      })
+      cluster_profil <- data.frame(
+        Cluster = c(1, 2, 3),
+        profil = c("Gaming", "IA / Deep Learning", "Entrée de gamme / IGP"),
+        recommandation = c("Jeux vidéo, rendering 3D", "Training IA, compute", "Usage bureautique / multimédia léger")
+      )
+      
+      output$clusterMeaning <- renderTable(cluster_profil)
+      
+      
+      
     } else {
       reactive_acp$result <- NULL
       reactive_acp$selected_vars <- NULL
@@ -499,6 +530,8 @@ server <- function(input, output, session) {
     # Mettre à jour le deuxième selectInput lorsque le premier change
     updateSelectInput(session, "var_quanti1", selected = input$var_quanti)
   })
+  
+ 
   
   
 }
