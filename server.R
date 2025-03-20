@@ -25,6 +25,7 @@ server <- function(input, output, session) {
   observe({
     df_data <- filtered_data()
     
+
     # Variables quantitatives (numériques)
     quant_vars <- names(df_data)[sapply(df_data, is.numeric)]
     
@@ -164,6 +165,8 @@ server <- function(input, output, session) {
       selected_columns <- reactive_acp$selected_vars
       print("Selected Columns:")
       print(selected_columns)  # Print selected columns
+      min_year=min(filtered_acp_data$releaseYear)
+      max_year=max(filtered_acp_data$releaseYear)
       
       df_ACP_1 <- filtered_acp_data[, selected_columns, drop = FALSE] %>% scale(center = TRUE, scale = TRUE)
       print("Scaled ACP Data (df_ACP_1):")
@@ -201,6 +204,14 @@ server <- function(input, output, session) {
           buttons = c('copy', 'csv', 'excel')
         ))
       })
+      
+      # Télécharger les données filtrées
+      output$downloadData3 <- downloadHandler(
+        filename = function() { paste("filtered_data_", Sys.Date(), ".csv", sep = "") },
+        content = function(file) {
+          write.csv(filtered_acp_data, file)
+        }
+      )
       # Plot the clusters
       output$cluster_plot <- renderPlot({
         fviz_cluster(cl2, geom = "point", data = df_ACP_1, label = rownames(filtered_acp_data)) +
