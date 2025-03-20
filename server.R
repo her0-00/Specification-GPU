@@ -1,435 +1,347 @@
-server <- function(input, output, session) {
+# Initiation de l'UI -----
+ui <- shinyUI(dashboardPage(
+  dashboardHeader(title = "Caractérisation des GPU"),
   
-  # Sélectionner toutes les options dans les filtres
-  observeEvent(input$select_all, {
-    updateSelectInput(session, "IGP", selected = IGP)
-    updateSelectInput(session, "Marque", selected = marque)
-  })
-  
-  # Filtrer les données selon les choix de l'utilisateur
-  filtered_data <- reactive({
-    req(input$IGP, input$Marque)
+  # Contenu de la barre latérale ------
+  dashboardSidebar(
+    sidebarMenu(
+      menuItem("Présentation des données", tabName = "presentation", icon = icon("table")),
+      menuItem("Analyses descriptives", tabName = "resume", icon = icon("file-alt")),
+      menuItem("GPU PC", tabName = "GPUP", icon = icon("chart-bar")),
+      menuItem("GPU laptop", tabName = "GPUL", icon = icon("chart-bar")),
+      menuItem("ACP", tabName = "acp", icon = icon("chart-line")),
+      menuItem("Etude Technique", tabName = "Etude_technique", icon = icon("cogs")),
+      menuItem("Matrice de Corrélation", tabName = "correlation", icon = icon("th")),
+      menuItem("Évolution des GPU", tabName = "evolution", icon = icon("line-chart"))
+    ),
+    selectInput(
+      inputId = "IGP",
+      label = "IGP ? :",
+      choices = IGP,
+      selected = IGP,
+      multiple = FALSE
+    ),
+    selectInput(
+      inputId = "Marque",
+      label = "Marque ? :",
+      choices = marque,
+      selected = marque,
+      multiple = TRUE
+    ),
+    actionButton("select_all", "Tout sélectionner"),
+    actionButton("apply_filters", "Rafraîchir"),
     
-    df_filtered <- df %>%
-      filter(igp %in% input$IGP, manufacturer %in% input$Marque)
-    
-    if (input$IGP == "Yes") {
-      df_filtered <- df_filtered[, !(names(df_filtered) %in% c("memClock", "memType"))]
-    }
-    
-    df_filtered
-    
-  })
-  
-  # Création des listes pour les variables quantitatives et qualitatives en utilisant les données filtrées
-  observe({
-    df_data <- filtered_data()
-    
-    # Variables quantitatives (numériques)
-    quant_vars <- names(df_data)[sapply(df_data, is.numeric)]
-    
-    # Variables qualitatives (facteurs ou catégoriques)
-    qual_vars <- names(df_data)[sapply(df_data, is.factor)]
-    
-    # Variables actives pour l'ACP (quantitatives uniquement)
-    quant_vars_actives <- quant_vars  # Modifiez ici si vous voulez limiter les variables spécifiques à l'ACP.
-    
-    # Variables catégorielles pour l'ACP
-    cat_vars <- qual_vars 
-    
-    updateSelectInput(session, "var_quanti", choices = quant_vars)
-    updateSelectInput(session, "var_quali", choices = qual_vars)
-    updateSelectInput(session, "acp_vars", choices = quant_vars)
-    updateSelectInput(session, "acp_cat_vars", choices = qual_vars)
-  })
-  
-  # Filtrer les données selon la marque et la plage d'années sélectionnées
-  filtered_acp_data <- reactive({
-    req(input$selected_brand, input$year_range)
-    filtered_data() %>%
-      filter(manufacturer == input$selected_brand, releaseYear >= input$year_ranges[1], releaseYear <= input$year_ranges[2])
-  })
-  
-  # Générer la table des données
-  output$table <- renderDataTable({
-    datatable(filtered_data(), options = list(
-      pageLength = 10,
-      scrollX = TRUE,
-      dom = 'Bfrtip',
-      buttons = c('copy', 'csv', 'excel')
-    ))
-  })
-  
-  # Générer les statistiques descriptives
-  output$desc_stats <- renderDataTable({
-    req(filtered_data())
-    skim(filtered_data()) %>%
-      dplyr::select(skim_type, skim_variable, n_missing, complete_rate, numeric.mean, numeric.sd, numeric.p0, numeric.p50) %>%
-      datatable(options = list(scrollX = TRUE, pageLength = 5))
-  })
-  
-  # Télécharger les données filtrées
-  output$downloadData <- downloadHandler(
-    filename = function() { paste("filtered_data_", Sys.Date(), ".csv", sep = "") },
-    content = function(file) {
-      write.csv(filtered_data(), file)
-    }
-  )
-  
-  output$downloadData2 <- downloadHandler(
-    filename = function() { paste("desc_stats_", Sys.Date(), ".csv", sep = "") },
-    content = function(file) {
-      desc_stats <- skim(filtered_data()) %>%
-        dplyr::select(skim_type, skim_variable, n_missing, complete_rate, numeric.mean, numeric.sd, numeric.p0, numeric.p50)
-      write.csv(desc_stats, file)
-    }
-  )
-  
-  # HISTOGRAMME
-  output$histogram <- renderPlotly({
-    req(input$var_quanti)  
-    p <- ggplot(filtered_data(), aes_string(x = input$var_quanti)) +
-      geom_histogram(binwidth = 10, fill = "blue", color = "black", alpha = 0.7) +
-      labs(
-        title = paste("Histogramme de", input$var_quanti),
-        x = input$var_quanti,
-        y = "Fréquence"
-      ) 
-    ggplotly(p)  # Conversion en graphique interactif
-  })
-  
-  # Boxplot
-  output$boxplot <- renderPlotly({
-    req(input$var_quanti)  # Vérification qu'une variable quantitative est choisie
-    
-    # Création du boxplot
-    p <- ggplot(filtered_data(), aes_string(y = input$var_quanti)) +
-      geom_boxplot(fill = "orange", color = "black", alpha = 0.7) +
-      labs(
-        title = paste("Boxplot de", input$var_quanti),
-        y = input$var_quanti
-      ) +
-      theme_minimal()
-    
-    ggplotly(p)  # Conversion en graphique interactif
-  })
-  
-  # Visualisation des répartitions qualitatives
-  output$qualitative_table <- renderDataTable({
-    req(input$var_quali)
-    filtered_data() %>%
-      group_by(.data[[input$var_quali]]) %>%
-      summarise(Count = n()) %>%
-      datatable(options = list(pageLength = 5))
-  })
-  
-  # Implémentation de l'ACP
-  
-  # Sélectionne ou désélectionne toutes les variables pour l'ACP -----
-  observeEvent(input$select_all, {
-    current_selection <- input$acp_vars 
-    if (length(current_selection) < length(quantitative_vars)) {
-      updateSelectInput(session, "acp_vars", selected = quantitative_vars)
-    } else {
-      updateSelectInput(session, "acp_vars", selected = character(0))
-    }
-  })
-  # Execution de l'ACP ----
-  observeEvent(input$run_acp, {
-    if (!is.null(input$acp_vars) && length(input$acp_vars) > 1) {
-      reactive_acp$selected_vars <- input$acp_vars
-      print("Selected Variables for ACP:")
-      print(reactive_acp$selected_vars)  # Print selected variables for ACP
-      
-      reactive_acp$result <- doitPerformACP(filtered_acp_data(), input$acp_vars)
-      print("ACP Result:")
-      print(reactive_acp$result)  # Print ACP result
-      
-      # Filter individuals based on cos2 values
-      cos2_values <- reactive_acp$result$ind$cos2
-      print("Cos2 Values:")
-      print(cos2_values)  # Print cos2 values
-      
-      # Select the top input$contrib_value individuals based on their cos2 values
-      total_cos2 <- rowSums(cos2_values[,1:2])
-      top_individuals <- order(total_cos2, decreasing = TRUE)[1:input$contrib_value]
-      print("Top Individuals:")
-      print(top_individuals)  # Print top individuals
-      
-      filtered_acp_data <- filtered_acp_data()[top_individuals, , drop = FALSE]
-      print("Filtered ACP Data:")
-      print(filtered_acp_data)  # Print filtered ACP data
-      
-      # Ensure that df_ACP_1 has the same columns as the data used for the ACP
-      selected_columns <- reactive_acp$selected_vars
-      print("Selected Columns:")
-      print(selected_columns)  # Print selected columns
-      
-      df_ACP_1 <- filtered_acp_data[, selected_columns, drop = FALSE] %>% scale(center = TRUE, scale = TRUE)
-      print("Scaled ACP Data (df_ACP_1):")
-      print(df_ACP_1)  # Print scaled ACP data
-      
-      # Determine the optimal number of clusters using the "within-cluster sum of squares" method
-      output$nb_clust <- renderPlot({
-        fviz_nbclust(df_ACP_1, kmeans, method = "wss", k.max = 10, nstart = 100) +
-          labs(title = "Elbow Method for Optimal Number of Clusters")
-      })
-      
-      # Check the number of distinct points in the dataset
-      distinct_points <- nrow(unique(df_ACP_1))
-      print("Number of Distinct Points:")
-      print(distinct_points)  # Print number of distinct points
-      
-      # Ensure the number of clusters does not exceed the number of distinct points
-      num_clusters <- input$n_cluster
-      print("Number of Clusters:")
-      print(num_clusters)  # Print number of clusters
-      
-      # Perform clustering with the optimal number of clusters
-      cl2 <- kmeans(x = df_ACP_1, centers = num_clusters, nstart = 100)
-      print("Clustering Result (cl2):")
-      print(cl2)  # Print clustering result
-      
-      # Plot the clusters
-      output$cluster_plot <- renderPlot({
-        fviz_cluster(cl2, geom = "point", data = df_ACP_1, label = rownames(filtered_acp_data)) +
-          labs(title = "Clustering des individus en ACP",
-               x = "PC1",
-               y = "PC2")
-      })
-    } else {
-      reactive_acp$result <- NULL
-      reactive_acp$selected_vars <- NULL
-    }
-  })
-  
-  # Affichage des résultats de l'ACP
-  output$acp_ind_plot <- renderPlot({
-    req(reactive_acp$result)
-    plot_acp_ind(reactive_acp$result, filtered_data(), input$acp_cat_vars, input$contrib_value)
-  })
-  
-  # Tracer les graphiques des variables
-  output$acp_var_plot <- renderPlot({
-    req(reactive_acp$result)
-    plot_acp_var(reactive_acp$result, input$acp_vars)
-  })
-  
-  observeEvent(input$apply_cat, {
-    update_acp(input, filtered_data())
-  })
-  
-  output$biplot <- renderPlot({
-    req(reactive_acp$result)
-    plot_acp_biplot(reactive_acp$result, filtered_data(), input$acp_cat_vars, input$acp_vars, input$contrib_value)
-  })
-  
-  output$acp_results_text <- renderPrint({
-    req(reactive_acp$result)
-    summary(reactive_acp$result)
-  })
-  
-  # Choix d'axes
-  output$acp_eigenvalues <- renderPlot({
-    req(reactive_acp$result)
-    
-    # Extraction des valeurs propres
-    valeurspropres <- reactive_acp$result$eig
-    
-    # Création du barplot
-    barplot(valeurspropres[, 2], names.arg = 1:nrow(valeurspropres),
-            main = "Pourcentage de la variance expliquée par chaque composante",
-            xlab = "Composantes principales",
-            ylab = "Pourcentage de variance expliquée",
-            col = "steelblue")
-    
-    # Ajout de la ligne connectée
-    lines(x = 1:nrow(valeurspropres), valeurspropres[, 2], 
-          type = "b", pch = 19, col = "red")
-  })
-  
-  # Graphique des contributions des variables à PC1
-  output$contrib_PC1 <- renderPlot({
-    req(reactive_acp$result)
-    fviz_contrib(reactive_acp$result, choice = "var", axes = 1, top = 10)
-  })
-  
-  # Graphique des contributions des variables à PC2
-  output$contrib_PC2 <- renderPlot({
-    req(reactive_acp$result)
-    fviz_contrib(reactive_acp$result, choice = "var", axes = 2, top = 10)
-  })
-  
-  # cos² a PC1
-  output$cos2_PC1 <- renderPlot({
-    req(reactive_acp$result)
-    fviz_cos2(reactive_acp$result, choice = "var", axes = 1, top = 10) +
-      ggtitle("Qualité de la représentation des variables sur la PC1 (cos²)")
-  })
-  
-  # cos² a PC2
-  output$cos2_PC2 <- renderPlot({
-    req(reactive_acp$result)
-    fviz_cos2(reactive_acp$result, choice = "var", axes = 2, top = 10) +
-      ggtitle("Qualité de la représentation des variables sur la PC2 (cos²)")
-  })
-  
-  # Matrice de covariance
-  output$var_cov_matrix <- renderPrint({
-    req(reactive_acp$selected_vars)
-    print(get_S(filtered_data()[ , reactive_acp$selected_vars]))
-  })
-  
-  output$eigen_values <- renderPrint({
-    req(reactive_acp$selected_vars)
-    
-    # Récupération des valeurs propres
-    lambdas <- get_LambdasAndEigenVectors(filtered_data()[, reactive_acp$selected_vars])$lambdas
-    
-    # Calcul du pourcentage de variance expliquée
-    variance_percentage <- (lambdas / sum(lambdas)) * 100
-    
-    # Calcul du pourcentage de variance cumulée
-    cumulative_variance <- cumsum(variance_percentage)
-    
-    # Création du tableau
-    eigen_table <- data.frame(
-      "eigenvalue" = lambdas,
-      "percentage of variance" = variance_percentage,
-      "cumulative percentage of variance" = cumulative_variance
+    # Ajout de mon nom et descriptif -----
+    br(),
+    div(style = "margin-top: 20px; padding: 10px; border-radius: 5px; text-align: center;",
+        h4(style = "font-size: 16px;", "Développé par Nathan Avenel | Anas Ibnouali | Yénam Dossou"),
+        p(style = "font-size: 13px;", "Étudiants en science des données"),
+        p(style = "font-size: 13px;", "à l'IUT de Vannes")
     )
+  ),
+  
+  # Contenu du corps -----
+  dashboardBody(
+    useShinyjs(),
     
-    print(eigen_table)
-  })
-  
-  output$eigen_vectors <- renderPrint({
-    req(reactive_acp$selected_vars)
-    print(get_LambdasAndEigenVectors(filtered_data()[ , reactive_acp$selected_vars])$vectors)
-  })
-  
-  output$inertia_percentage <- renderPrint({
-    req(reactive_acp$selected_vars)
-    print(get_InertiaAxes(filtered_data()[ , reactive_acp$selected_vars]))
-  })
-  
-  # Sélectionne ou désélectionne toutes les variables pour l'ACP -----
-  observeEvent(input$select_all_AC, {
-    current_selection <- input$acp_vars  
-    if (length(current_selection) < length(quant_vars_actives)) {
-      updateSelectInput(session, "acp_vars", selected = quant_vars_actives)
-    } else {
-      updateSelectInput(session, "acp_vars", selected = character(0))
+    tags$head(
+      tags$style(HTML(
+        "body {font-family: 'Arial', sans-serif; background-color: #F4F6F9; color: #333;}
+         .box-title { font-weight: bold; font-size: 16px; text-transform: uppercase; }
+         .skin-blue .main-header .logo, .skin-blue .main-header .navbar { background-color: #3271a5; }
+         .skin-blue .main-sidebar { background-color: #3271a5; }
+         .box { border-radius: 12px; box-shadow: 3px 3px 15px rgba(0, 0, 0, 0.15); transition: 0.3s ease-in-out; }
+         .box:hover { transform: none !important ; }
+         .btn { transition: background-color 0.3s ease-in-out, box-shadow 0.3s ease-in-out; border-radius: 8px; }
+         .btn:hover { background-color: #ff9800 !important; color: white !important; box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.3); }
+         .dark-mode { background-color: #2C3E50; color: white; }
+         .dark-mode .box { background-color: #34495E; color: white; border-color: #555; }
+         .dark-mode .btn { background-color: #5DADE2 !important; color: white !important; }
+         .dark-mode .sidebar { background-color: #1A252F !important; }
+         .dark-mode .main-header, .dark-mode .navbar { background-color: #1F2933; }
+         .dark-mode .sidebar-menu > li > a { color: white !important; }
+         .dark-mode .sidebar-menu > li.active > a { background-color: #445A6F !important; }
+         .tab-pane { padding: 15px; }
+         .box-body { padding: 15px; }
+         .footer { background-color: #222D32; color: white; padding: 15px; text-align: center; font-size: 14px; }
+         .nav-tabs-custom .nav-tabs li a {
+      font-size: 15px;
+      font-weight: bold;
+      color: #3271a5;
+      padding: 10px 15px;
+      border-radius: 8px;
+      transition: all 0.3s ease-in-out;
     }
-  })
-  
-  # Génère une matrice de corrélation entre les variables sélectionnées -----
-  output$corr_plot <- renderPlot({
-    req(filtered_data(), input$corr_vars)  
     
-    # Vérifie que les variables sélectionnées existent dans filtered_data() -----
-    valid_vars <- intersect(input$corr_vars, colnames(filtered_data()))
-    if (length(valid_vars) < 2) {
-      plot.new()
-      text(0.5, 0.5, "Veuillez sélectionner au moins deux variables valides", col = "red", cex = 1.5)
-      return()
+    .nav-tabs-custom .nav-tabs li a:hover {
+      background-color: #ff9800;
+      color: white !important;
+      border-radius: 8px;
+    }
+
+    .nav-tabs-custom .nav-tabs .active a, 
+    .nav-tabs-custom .nav-tabs .active a:hover {
+      background-color: #3271a5 !important;
+      color: white !important;
+      border-radius: 8px;
+    }
+
+    .nav-tabs {
+      border-bottom: 2px solid #3271a5;
+      margin-bottom: 15px;
+    }
+        /* Style général des onglets */
+    .nav-tabs-custom .nav-tabs li a {
+      font-size: 16px;
+      font-weight: bold;
+      color: #3271a5;
+      padding: 12px 18px;
+      border-radius: 8px;
+      transition: all 0.3s ease-in-out;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+
+    /* Style de l'onglet actif */
+    .nav-tabs-custom .nav-tabs .active a, 
+    .nav-tabs-custom .nav-tabs .active a:hover {
+      background-color: #3271a5 !important;
+      color: white !important;
+      border-radius: 8px;
+      box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.3);
+      position: relative;
+    }
+      
+    .selectize-dropdown {
+      z-index: 10000 !important; /* S'assure que la liste est bien au-dessus */
+      position: absolute !important; /* Fixe la position */
     }
     
-    # Sélection des données quantitatives -----
-    corr_data <- filtered_data()[, valid_vars, drop = FALSE]
+    .selectize-dropdown-content {
+      position: relative !important; /* Empêche le flottement de la liste */
+    }
     
-    # Calcul de la matrice de corrélation -----
-    corr_matrix <- cor(corr_data, use = "complete.obs")
+    .box {
+      overflow: visible !important; /* S'assure que la box ne cache pas la liste */
+    }
     
-    # Options de personnalisation (avec valeurs par défaut si non cochées) -----
-    corr_method <- ifelse(input$customize_corr, input$corr_method, "circle")
-    corr_type <- ifelse(input$customize_corr, input$corr_type, "full")
-    corr_order <- ifelse(input$customize_corr, input$corr_order, "original")
-    
-    # Affichage de la matrice de corrélation -----
-    corrplot(corr_matrix, method = corr_method, type = corr_type, order = corr_order,
-             tl.cex = 0.8, cl.cex = 0.8)
-  })
-  
-  # Reactive expression for the selected dataset
-  df_select <- reactive({
-    filtered_data()
-  })
-  
-  
-  # Filter data based on selected brand and year range
-  filtered_evolution_data <- reactive({
-    req(input$selected_brand, input$year_range)
-    filtered_data() %>%
-      filter(manufacturer == input$selected_brand & releaseYear >= input$year_range[1] & releaseYear <= input$year_range[2])
-  })
-  
-  # Function to generate the evolution plot for a given characteristic
-  generate_evolution_plot <- function(data, characteristic, brand) {
-    ggplot(data, aes(x = releaseYear, y = !!sym(characteristic))) +
-      geom_line() +
-      labs(title = paste("Évolution de", characteristic, "pour", brand),
-           x = "Année de sortie",
-           y = "Valeur des caractéristiques") +
-      theme_minimal() +
-      scale_x_continuous(breaks = seq(min(data$releaseYear), max(data$releaseYear), by = 1)) +
-      scale_y_continuous(breaks = seq(0, max(data[[characteristic]], na.rm = TRUE), by = 20))
-  }
-  
-  # Generate the evolution plot for memClock
-  output$evolution_plot_memClock <- renderPlotly({
-    req(filtered_evolution_data())
-    data <- filtered_evolution_data()
-    p <- generate_evolution_plot(data, "memClock", input$selected_brand)
-    ggplotly(p)
-  })
-  
-  # Generate the evolution plot for unifiedShader
-  output$evolution_plot_unifiedShader <- renderPlotly({
-    req(filtered_evolution_data())
-    data <- filtered_evolution_data()
-    p <- generate_evolution_plot(data, "unifiedShader", input$selected_brand)
-    ggplotly(p)
-  })
-  
-  # Generate the evolution plot for tmu
-  output$evolution_plot_tmu <- renderPlotly({
-    req(filtered_evolution_data())
-    data <- filtered_evolution_data()
-    p <- generate_evolution_plot(data, "tmu", input$selected_brand)
-    ggplotly(p)
-  })
-  
-  # Generate the evolution plot for top
-  output$evolution_plot_top <- renderPlotly({
-    req(filtered_evolution_data())
-    data <- filtered_evolution_data()
-    p <- generate_evolution_plot(data, "rop", input$selected_brand)
-    ggplotly(p)
-  })
-  
-  # Generate the evolution plot for memSize
-  output$evolution_plot_memSize <- renderPlotly({
-    req(filtered_evolution_data())
-    data <- filtered_evolution_data()
-    p <- generate_evolution_plot(data, "memSize", input$selected_brand)
-    ggplotly(p)
-  })
-  
-  # Generate the evolution plot for memBusWidth
-  output$evolution_plot_memBusWidth <- renderPlotly({
-    req(filtered_evolution_data())
-    data <- filtered_evolution_data()
-    p <- generate_evolution_plot(data, "memBusWidth", input$selected_brand)
-    ggplotly(p)
-  })
-  
-  # Generate the evolution plot for gpuClock
-  output$evolution_plot_gpuClock <- renderPlotly({
-    req(filtered_evolution_data())
-    data <- filtered_evolution_data()
-    p <- generate_evolution_plot(data, "gpuClock", input$selected_brand)
-    ggplotly(p)
-    
-  })
-  
-}
+    .selectize-input {
+      cursor: pointer !important; /* Améliore la sélection */
+    }
+
+
+        "
+      ))
+    ),
+    tabItems(
+      # Première section : Présentation des données -----
+      tabItem(tabName = "presentation",
+              fluidRow(
+                column(12,
+                       box(
+                         title = "Descriptif des données",
+                         status = "primary",
+                         solidHeader = TRUE,
+                         width = NULL,
+                         p("On s'intéresse aux GPU")
+                       )
+                )
+              ),
+              fluidRow(
+                column(12,
+                       box(
+                         title = "Tableau des données",
+                         status = "primary",
+                         solidHeader = TRUE,
+                         width = NULL,
+                         dataTableOutput("table"),
+                         downloadButton("downloadData", "Télécharger les données")
+                       )
+                )
+              )
+      ),
+      
+      # Deuxième section : Analyses descriptives -----
+      tabItem(tabName = "resume",
+              fluidRow(
+                h2("Analyse des données", class = "centered"),
+                tabsetPanel(
+                  # Onglet des valeurs manquantes
+                  tabPanel("Valeurs manquantes",
+                           fluidRow(
+                             column(12,
+                                    box(
+                                      title = "Analyses descriptives",
+                                      status = "primary",
+                                      solidHeader = TRUE,
+                                      width = NULL,
+                                      dataTableOutput("desc_stats"),
+                                      downloadButton("downloadData2", "Télécharger les données")
+                                    )
+                             )
+                           )
+                  ),
+                  # Onglet des visualisations
+                  tabPanel("Visualisation",
+                           fluidRow(
+                             column(6,
+                                    selectInput(
+                                      inputId = "var_quanti",
+                                      label = "Choisissez une variable quantitative :",
+                                      choices = quant_vars,  # Liste des variables quantitatives
+                                      selected = quant_vars[1]
+                                    ),
+                                    plotlyOutput("histogram")
+                                    
+                             ),
+                             column(6,
+                                    plotlyOutput("boxplot")
+                             ),
+                             column(6,
+                                    selectInput(
+                                      inputId = "var_quali",
+                                      label = "Choisissez une variable qualitative :",
+                                      choices = qual_vars , # Liste des variables qualitatives
+                                      selected = qual_vars[1]
+                                    ),
+                                    dataTableOutput("qualitative_table")
+                             )
+                           )
+                  )
+                )
+              )
+      ),
+      
+      # Onglet ACP
+      tabItem(tabName = "acp",
+              tabsetPanel(
+                tabPanel("Affichage des projections",
+                         fluidRow(
+                           box(
+                             title = "Sélectionnez les variables pour l'ACP", status = "primary", solidHeader = TRUE, width = 6,
+                             selectInput("acp_vars", "Variables actives :", choices = quant_vars_actives, selected = quant_vars_actives[1:3], multiple = TRUE),
+                             selectInput("selected_brand", "Choix de la marque:", choices = marq_, selected = NULL, multiple = TRUE),
+                             sliderInput("year_ranges", "Sélectionnez la plage d'années :", min = min(df$releaseYear), max = max(df$releaseYear), value = c(min(df$releaseYear), max(df$releaseYear))),
+                             numericInput("contrib_value", "Valeur de contrib :", value = 50, min = 10, max = 100),
+                             actionButton("run_acp", "Lancer l'ACP", class = "btn-success"),
+                             actionButton("select_all_AC", "Sélectionner toutes les variables", class = "btn-info")
+                           ),
+                           column(6,
+                                  box(
+                                    title = "Sélectionnez les variables catégorielles", status = "primary", solidHeader = TRUE, width = 12,
+                                    selectInput("acp_cat_vars", "Variables catégorielles :", choices = cat_vars, selected = NULL, multiple = TRUE),
+                                    actionButton("apply_cat", "Appliquer", class = "btn-success")
+                                  )
+                           )
+                         ),
+                         fluidRow( 
+                           column(6, box(title = "Projection des individus", status = "primary", solidHeader = TRUE, width = 12, plotOutput("acp_ind_plot"))),
+                           column(6, box(title = "Clustered Data", status = "primary", solidHeader = TRUE, width = 12, plotOutput("nb_clust"))),
+                           column(6, box(title = "Clustered Data", status = "primary", solidHeader = TRUE, width = 12, plotOutput("cluster_plot")
+                                  ,numericInput("n_cluster", "Nombre de cluster :", value = 3, min = 0, max = 5))),
+                           column(6, box(title = "Projection des variables", status = "primary", solidHeader = TRUE, width = 12, plotOutput("acp_var_plot"))),
+                          # column(6, box(title = "Résumé de l'ACP", status = "primary", solidHeader = TRUE, width = 12, verbatimTextOutput("acp_results_text"))),
+                           #column(6, box(title = "BiPlot", status = "primary", solidHeader = TRUE, width = 12, plotOutput("biplot"))),
+                           column(12,box(title='Data', status = "primary", solidHeader = TRUE, width = 12,dataTableOutput("clustered_table")))
+                         )
+                ),
+                tabPanel("Choix du nombre d'axes factorielles",
+                         box(title = "Choix du nombre d'axes factorielles", status = "primary", solidHeader = TRUE, width = 12,
+                             plotOutput("acp_eigenvalues"))
+                ),
+                tabPanel("Matrice des variances-covariances",
+                         box(title = "Matrice des variances-covariances", status = "primary", solidHeader = TRUE, width = 12,
+                             verbatimTextOutput("var_cov_matrix"))
+                ),
+                tabPanel("Valeurs propres",
+                         box(title = "Valeurs propres", status = "primary", solidHeader = TRUE, width = 12,
+                             verbatimTextOutput("eigen_values"))
+                ),
+                tabPanel("Vecteurs Propres",
+                         box(title = "Vecteurs propres", status = "primary", solidHeader = TRUE, width = 12,
+                             verbatimTextOutput("eigen_vectors"))
+                ),
+                tabPanel("Pourcentage d'inertie totale",
+                         box(title = "Pourcentage d'inertie totale", status = "primary", solidHeader = TRUE, width = 12, 
+                             verbatimTextOutput("inertia_percentage"))
+                )
+              )
+      ),
+      
+      # Onglet Étude Technique
+      tabItem(tabName = "Etude_technique",
+              tabsetPanel(
+                tabPanel("Contributions des variables",
+                         fluidRow(
+                           box(title = "Axe 1", status = "primary", solidHeader = TRUE, width = 12,
+                               plotOutput("contrib_PC1"))
+                         ),
+                         fluidRow(
+                           box(title = "Axe 2", status = "primary", solidHeader = TRUE, width = 12,
+                               plotOutput("contrib_PC2"))     
+                         )
+                ),
+                tabPanel("Qualité de la représentation des variables (cos²)",
+                         fluidRow(
+                           box(title = "Axe 1", status = "primary", solidHeader = TRUE, width = 12,
+                               plotOutput("cos2_PC1"))
+                         ),
+                         fluidRow(
+                           box(title = "Axe 2", status = "primary", solidHeader = TRUE, width = 12,
+                               plotOutput("cos2_PC2"))
+                         )
+                )
+              )
+      ), # Fin de l'onglet Étude Technique
+      
+      # Onglet affichant la matrice de corrélation -----
+      tabItem(tabName = "correlation",
+              fluidRow(
+                box(
+                  title = "Sélectionnez les variables", status = "primary", solidHeader = TRUE, width = 12,
+                  selectInput("corr_vars", "Sélectionnez les variables :", 
+                              choices = quant_vars, 
+                              selected = quant_vars[1:2], 
+                              multiple = TRUE),
+                  actionButton("select_all_corr", "Sélectionner toutes les variables", class = "btn-info")
+                ),
+                box(title = "Options de personnalisation", status = "primary", solidHeader = TRUE, width = 12,
+                    checkboxInput("customize_corr", label=tags$span(style = "color: black;", "Personnaliser l'apparence"), value = FALSE),
+                    conditionalPanel(
+                      condition = "input.customize_corr == true",
+                      selectInput("corr_method", label=tags$span(style = "color: black;", "Méthode de corrélation"), 
+                                  choices = c("circle", "square", "color", "number"), selected = "circle"),
+                      selectInput("corr_type", label=tags$span(style = "color: black;", "Type de matrice"), 
+                                  choices = c("full", "upper", "lower"), selected = "full"),
+                      selectInput("corr_order", label=tags$span(style = "color: black;", "Ordre des variables"), 
+                                  choices = c("original", "alphabet", "hclust"), selected = "original")
+                    )
+                ),
+                box(title = "Matrice de Corrélation", status = "primary", solidHeader = TRUE, width = 12, plotOutput("corr_plot"))
+              )
+      ),
+      
+      #Onglet XXXX
+      tabItem(tabName = "evolution",
+              fluidRow(
+                column(6,
+                       selectInput("selected_brand", "Sélectionnez la marque :", choices = unique(df$manufacturer), selected = unique(df$manufacturer)[1])
+                ),
+                column(6,
+                       sliderInput("year_range", "Sélectionnez la plage d'années :", min = min(df$releaseYear), max = max(df$releaseYear), value = c(min(df$releaseYear), max(df$releaseYear)))
+                )
+              ),
+              fluidRow( column(12, box(title = "Mémoire (memSize)", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_memSize"))),
+                        column(12, box(title = "Bus de mémoire (memBusWidth)", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_memBusWidth"))),
+                        column(12, box(title = "Fréquence GPU (gpuClock)", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_gpuClock"))),
+                        column(12, box(title = "Fréquence Mémoire (memClock)", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_memClock"))),
+                        column(12, box(title = "Shader Unifié (unifiedShader)", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_unifiedShader"))),
+                        column(12, box(title = "TMU", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_tmu"))),
+                        column(12, box(title = "rop", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_top")))
+              )
+      )
+    )
+  )
+)
+)
