@@ -25,7 +25,6 @@ server <- function(input, output, session) {
   observe({
     df_data <- filtered_data()
     
-
     # Variables quantitatives (numériques)
     quant_vars <- names(df_data)[sapply(df_data, is.numeric)]
     
@@ -37,7 +36,7 @@ server <- function(input, output, session) {
     
     # Variables catégorielles pour l'ACP
     cat_vars <- qual_vars 
-    
+  
     updateSelectInput(session, "var_quanti", choices = quant_vars)
     updateSelectInput(session, "var_quali", choices = qual_vars)
     updateSelectInput(session, "acp_vars", choices = quant_vars)
@@ -88,23 +87,24 @@ server <- function(input, output, session) {
   
   # HISTOGRAMME
   output$histogram <- renderPlotly({
-    req(input$var_quanti)  
-    p <- ggplot(filtered_data(), aes_string(x = input$var_quanti)) +
+    req(input$var_quanti1)  
+    p <- ggplot(df, aes_string(x = input$var_quanti1)) +
       geom_histogram(binwidth = 10, fill = "blue", color = "black", alpha = 0.7) +
       labs(
-        title = paste("Histogramme de", input$var_quanti),
-        x = input$var_quanti,
+        title = paste("Histogramme de", input$var_quanti1),
+        x = input$var_quanti1,
         y = "Fréquence"
       ) 
     ggplotly(p)  # Conversion en graphique interactif
   })
   
-  # Boxplot
+  
+  #boxplot
   output$boxplot <- renderPlotly({
     req(input$var_quanti)  # Vérification qu'une variable quantitative est choisie
     
     # Création du boxplot
-    p <- ggplot(filtered_data(), aes_string(y = input$var_quanti)) +
+    p <- ggplot(df, aes_string(y = input$var_quanti)) +
       geom_boxplot(fill = "orange", color = "black", alpha = 0.7) +
       labs(
         title = paste("Boxplot de", input$var_quanti),
@@ -113,6 +113,61 @@ server <- function(input, output, session) {
       theme_minimal()
     
     ggplotly(p)  # Conversion en graphique interactif
+  })
+  
+  #  Répartition des types de mémoire (Pie Chart)
+  output$Pie <- renderPlotly({
+    req(input$var_quali2, input$var_quanti)
+    
+    # Filtrer les données pour supprimer les valeurs contenant 'gpuChip*' dans var_quali2
+    df_mem <- df %>%
+      filter(!grepl("gpuChip\\*", !!sym(input$var_quali2))) %>%  # Exclure les valeurs contenant 'gpuChip*'
+      group_by(!!sym(input$var_quali2)) %>%
+      summarise(value = sum(!!sym(input$var_quanti), na.rm = TRUE))
+    
+    plot_ly(df_mem, 
+            labels = ~get(input$var_quali2),  
+            values = ~value,                 
+            type = "pie") %>%
+      layout(title = paste("Répartition de", input$var_quanti, "par", input$var_quali2))
+  })
+  # Nuage de point
+  output$scatter <- renderPlotly({
+    req(input$var_quanti_x, input$var_quanti_y)
+    
+    plot_ly(df, 
+            x = ~get(input$var_quanti_x), 
+            y = ~get(input$var_quanti_y), 
+            color = ~get(input$var_quali),
+            type = "scatter",
+            mode = "markers") %>%
+      layout(title = paste("Corrélation entre", input$var_quanti_x, "et", input$var_quanti_y),
+             xaxis = list(title = input$var_quanti_x),
+             yaxis = list(title = input$var_quanti_y))
+  })
+  
+  #barchart
+  output$barplot <- renderPlotly({
+    req(input$var_quali)
+    
+    # Filtrer les variables qualitatives indésirables (par exemple, "productName" et "igp")
+    if (input$var_quali %in% c("productName", "igp")) {
+      return(NULL)  # Si la variable sélectionnée est "productName" ou "igp", ne pas afficher le graphique
+    }
+    
+    # Calcul du nombre d'occurrences pour chaque valeur de la variable qualitative
+    df_bar <- df %>%
+      group_by(!!sym(input$var_quali)) %>%
+      summarise(value = n())  # Calcul du nombre d'occurrences pour chaque catégorie de la variable qualitative
+    
+    # Affichage du graphique
+    plot_ly(df_bar, 
+            x = ~get(input$var_quali),  # Variable qualitative sur l'axe des abscisses
+            y = ~value,  # Le nombre d'occurrences sur l'axe des ordonnées
+            type = "bar") %>%
+      layout(title = paste(input$var_quali),
+             xaxis = list(title = input$var_quali),
+             yaxis = list(title = "Nombre d'occurrences"))
   })
   
   # Visualisation des répartitions qualitatives
@@ -165,12 +220,11 @@ server <- function(input, output, session) {
       selected_columns <- reactive_acp$selected_vars
       print("Selected Columns:")
       print(selected_columns)  # Print selected columns
-      min_year=min(filtered_acp_data$releaseYear)
-      max_year=max(filtered_acp_data$releaseYear)
       
       df_ACP_1 <- filtered_acp_data[, selected_columns, drop = FALSE] %>% scale(center = TRUE, scale = TRUE)
       print("Scaled ACP Data (df_ACP_1):")
       print(df_ACP_1)  # Print scaled ACP data
+      
       
       # Determine the optimal number of clusters using the "within-cluster sum of squares" method
       output$nb_clust <- renderPlot({
@@ -204,14 +258,6 @@ server <- function(input, output, session) {
           buttons = c('copy', 'csv', 'excel')
         ))
       })
-      
-      # Télécharger les données filtrées
-      output$downloadData3 <- downloadHandler(
-        filename = function() { paste("filtered_data_", Sys.Date(), ".csv", sep = "") },
-        content = function(file) {
-          write.csv(filtered_acp_data, file)
-        }
-      )
       # Plot the clusters
       output$cluster_plot <- renderPlot({
         fviz_cluster(cl2, geom = "point", data = df_ACP_1, label = rownames(filtered_acp_data)) +
@@ -385,25 +431,22 @@ server <- function(input, output, session) {
       filter(manufacturer == input$selected_brand & releaseYear >= input$year_range[1] & releaseYear <= input$year_range[2])
   })
   
-  # Function to generate the evolution plot for a given characteristic
   generate_evolution_plot <- function(data, characteristic, brand) {
-    ggplot(data, aes(x = releaseYear, y = !!sym(characteristic))) +
+    # Regrouper les données par année et calculer le maximum de la caractéristique par année
+    data_max_by_year <- data %>%
+      group_by(releaseYear) %>%
+      summarise(max_value = max(!!sym(characteristic), na.rm = TRUE))
+    
+    # Tracer le graphique avec les valeurs maximales par année
+    ggplot(data_max_by_year, aes(x = releaseYear, y = max_value)) +
       geom_line() +
       labs(title = paste("Évolution de", characteristic, "pour", brand),
            x = "Année de sortie",
-           y = "Valeur des caractéristiques") +
+           y = paste("Valeur maximale de", characteristic)) +
       theme_minimal() +
-      scale_x_continuous(breaks = seq(min(data$releaseYear), max(data$releaseYear), by = 1)) +
-      scale_y_continuous(breaks = seq(0, max(data[[characteristic]], na.rm = TRUE), by = 20))
+      scale_x_continuous(breaks = seq(min(data_max_by_year$releaseYear), max(data_max_by_year$releaseYear), by = 1)) +
+      scale_y_continuous(breaks = seq(0, max(data_max_by_year$max_value, na.rm = TRUE), by = 20))
   }
-  
-  # Generate the evolution plot for memClock
-  output$evolution_plot_memClock <- renderPlotly({
-    req(filtered_evolution_data())
-    data <- filtered_evolution_data()
-    p <- generate_evolution_plot(data, "memClock", input$selected_brand)
-    ggplotly(p)
-  })
   
   # Generate the evolution plot for unifiedShader
   output$evolution_plot_unifiedShader <- renderPlotly({
@@ -445,13 +488,17 @@ server <- function(input, output, session) {
     ggplotly(p)
   })
   
-  # Generate the evolution plot for gpuClock
-  output$evolution_plot_gpuClock <- renderPlotly({
-    req(filtered_evolution_data())
-    data <- filtered_evolution_data()
-    p <- generate_evolution_plot(data, "gpuClock", input$selected_brand)
-    ggplotly(p)
-    
+  # Synchroniser les choix des deux selectInput
+  observe({
+    # Mettre à jour le deuxième selectInput lorsque le premier change
+    updateSelectInput(session, "var_quanti", selected = input$var_quanti1)
   })
+  
+  # Synchroniser les choix des deux selectInput
+  observe({
+    # Mettre à jour le deuxième selectInput lorsque le premier change
+    updateSelectInput(session, "var_quanti1", selected = input$var_quanti)
+  })
+  
   
 }
