@@ -31,6 +31,19 @@ df<- df[!duplicated(df[, 1:3]), ]
 fact <- c(1:2,11:14)  # Indices des colonnes à transformer en facteurs (ajustez selon vos données)
 df[fact] <- lapply(df[, fact], as.factor)
 
+min_year=min(df$releaseYear)
+max_year=max(df$releaseYear)
+# Variables quantitatives (numériques)
+quant_vars <- names(df)[sapply(df, is.numeric)]
+
+# Variables qualitatives (facteurs ou catégoriques)
+qual_vars <- names(df)[sapply(df, is.factor)]
+
+# Variables actives pour l'ACP (quantitatives uniquement)
+quant_vars_actives <- quant_vars  # Modifiez ici si vous voulez limiter les variables spécifiques à l'ACP.
+
+# Variables catégorielles pour l'ACP
+cat_vars <- qual_vars 
 
 # Préparation pour les filtres dans la barre latérale -----
 # Extraction des valeurs uniques pour les champs nécessaires
@@ -82,7 +95,7 @@ get_InertiaAxes <- function(data) {
 # Fonction pour réaliser l'ACP
 
 # Normalisation des variables quantitatives
-data_scaled <- as.data.frame(scale(actives[, -1]))
+
 quant_vars_actives <- quant_vars
 update_acp <- function(input, df) {
   if (!is.null(input$acp_vars) && length(input$acp_vars) > 1) {
@@ -112,7 +125,7 @@ plot_acp_ind <- function(acp_result, df,color_var, contrib_value) {
                  habillage = df[[color_var]],  # Utilisation de la variable catégorielle
                  addEllipses = TRUE,  # Ajout des ellipses de concentration
                  palette = "jco", 
-               alpha.ind = 0.5,  # Transparence des points
+                 alpha.ind = 0.5,  # Transparence des points
                  select.ind = list(cos2 = contrib_value))  # Sélectionner les individus avec les plus grandes contributions
   } else {
     # Coloration par cos2 si aucune variable catégorielle n'est sélectionnée
