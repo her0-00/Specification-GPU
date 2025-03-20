@@ -6,9 +6,7 @@ ui <- shinyUI(dashboardPage(
   dashboardSidebar(
     sidebarMenu(
       menuItem("Présentation des données", tabName = "presentation", icon = icon("table")),
-      menuItem("Analyses descriptives", tabName = "resume", icon = icon("file-alt")),
-      menuItem("GPU PC", tabName = "GPUP", icon = icon("chart-bar")),
-      menuItem("GPU laptop", tabName = "GPUL", icon = icon("chart-bar")),
+      menuItem("Visualisations des données ", tabName = "resume", icon = icon("file-alt")),
       menuItem("ACP", tabName = "acp", icon = icon("chart-line")),
       menuItem("Etude Technique", tabName = "Etude_technique", icon = icon("cogs")),
       menuItem("Matrice de Corrélation", tabName = "correlation", icon = icon("th")),
@@ -47,7 +45,7 @@ ui <- shinyUI(dashboardPage(
     tags$head(
       tags$style(HTML(
         "body {font-family: 'Arial', sans-serif; background-color: #F4F6F9; color: #333;}
-         .box-title { font-weight: bold; font-size: 16px; text-transform: uppercase; }
+         
          .skin-blue .main-header .logo, .skin-blue .main-header .navbar { background-color: #3271a5; }
          .skin-blue .main-sidebar { background-color: #3271a5; }
          .box { border-radius: 12px; box-shadow: 3px 3px 15px rgba(0, 0, 0, 0.15); transition: 0.3s ease-in-out; }
@@ -144,7 +142,8 @@ ui <- shinyUI(dashboardPage(
                          status = "primary",
                          solidHeader = TRUE,
                          width = NULL,
-                         p("On s'intéresse aux GPU")
+                         p("Les unités de traitement graphique (GPU) sont essentielles dans l'informatique moderne, ayant évolué des simples accélérateurs graphiques pour jeux vidéo à des composants clés dans l'intelligence artificielle, le calcul scientifique et le traitement de données massives. Leur capacité à traiter des milliers de threads simultanément permet des applications variées, telles que l'entraînement rapide des réseaux de neurones et la réalisation de simulations complexes. Bien que puissants et efficaces, les GPU posent des défis en matière de programmation et d'optimisation, nécessitant une expertise spécifique pour maximiser leur potentiel. L'étude des GPU est donc cruciale pour comprendre leur impact technologique et leur avenir prometteur.
+")
                        )
                 )
               ),
@@ -165,51 +164,83 @@ ui <- shinyUI(dashboardPage(
       # Deuxième section : Analyses descriptives -----
       tabItem(tabName = "resume",
               fluidRow(
-                h2("Analyse des données", class = "centered"),
-                tabsetPanel(
-                  # Onglet des valeurs manquantes
-                  tabPanel("Valeurs manquantes",
-                           fluidRow(
-                             column(12,
-                                    box(
-                                      title = "Analyses descriptives",
-                                      status = "primary",
-                                      solidHeader = TRUE,
-                                      width = NULL,
-                                      dataTableOutput("desc_stats"),
-                                      downloadButton("downloadData2", "Télécharger les données")
-                                    )
-                             )
-                           )
-                  ),
                   # Onglet des visualisations
-                  tabPanel("Visualisation",
-                           fluidRow(
-                             column(6,
-                                    selectInput(
-                                      inputId = "var_quanti",
-                                      label = "Choisissez une variable quantitative :",
-                                      choices = quant_vars,  # Liste des variables quantitatives
-                                      selected = quant_vars[1]
-                                    ),
-                                    plotlyOutput("histogram")
-                                    
-                             ),
-                             column(6,
-                                    plotlyOutput("boxplot")
-                             ),
-                             column(6,
-                                    selectInput(
-                                      inputId = "var_quali",
-                                      label = "Choisissez une variable qualitative :",
-                                      choices = qual_vars , # Liste des variables qualitatives
-                                      selected = qual_vars[1]
-                                    ),
-                                    dataTableOutput("qualitative_table")
-                             )
-                           )
+                  tabPanel("Visualisation",box(
+                    fluidRow(
+                      column(12,
+                             selectInput(
+                               inputId = "var_quanti1",
+                               label = "Choisissez une variable quantitative :",
+                               choices = setdiff(quant_vars, c("releaseYear")),  # Liste des variables quantitatives
+                               selected = "memeSize")
+                      ))
+                    
+                    ,
+                    fluidRow(
+                      column(12,
+                             plotlyOutput("histogram"))))
+                    
+                    
+                    ,
+                    
+                    box(
+                      fluidRow(
+                        column(12,
+                               selectInput(
+                                 inputId = "var_quanti",
+                                 label = "Choisissez une variable quantitative :",
+                                 choices = setdiff(quant_vars, c("releaseYear")),  # Liste des variables quantitatives
+                                 selected = "memeSize")
+                        ),
+                        column(12,plotlyOutput("boxplot")))),
+                    
+                    box(height = "600px",
+                        column(12,
+                               # Sélection des variables X et Y pour le Scatter Plot
+                               selectInput("var_quanti_x", "Variable X (Scatter Plot) :", 
+                                           choices = setdiff(quant_vars, c("productName","releaseYear")),
+                                           selected = "gpuClock"),
+                               selectInput("var_quanti_y", "Variable Y (Scatter Plot) :", 
+                                           choices = setdiff(quant_vars, c("productName","releaseYear")),
+                                           selected = "memClock"),
+                               column(12,plotlyOutput("scatter"))
+                        )),
+                    
+                    box(height = "600px",
+                        fluidRow(
+                          column(12,
+                                 selectInput(
+                                   inputId = "var_quali",
+                                   label = "Choisissez une variable qualitative :",
+                                   choices = setdiff(names(df)[sapply(df, is.factor)], c("productName", "igp")),  # Liste des variables qualitatives
+                                   selected = names(df)[sapply(df, is.factor)][1]
+                                   
+                                 ))),
+                        fluidRow(
+                          column(12,
+                                 plotlyOutput("barplot"))))
+                    
+                    ,
+                    box(width = 12 , height = "700px",
+                        fluidRow(
+                          column(12,
+                                 selectInput(
+                                   inputId = "var_quali2",
+                                   label = "Choisissez une variable qualitative :",
+                                   choices = setdiff(qual_vars, c("productName","igp","gpuChip")),  # Liste des variables qualitatives
+                                   selected = "memType"
+                                   
+                                 ))
+                          ,column(12,plotlyOutput("Pie", height = "500px"))
+                          
+                        )
+                    ),
+                    
+                    
                   )
-                )
+                  
+                  
+                
               )
       ),
       
@@ -219,20 +250,14 @@ ui <- shinyUI(dashboardPage(
                 tabPanel("Affichage des projections",
                          fluidRow(
                            box(
-                             title = "Sélectionnez les variables pour l'ACP", status = "primary", solidHeader = TRUE, width = 6,
-                             selectInput("acp_vars", "Variables actives :", choices = quant_vars_actives, selected = quant_vars_actives[1:3], multiple = TRUE),
+                             title = "Sélectionnez les variables pour l'ACP", status = "primary", solidHeader = TRUE, width = 12,
+                             #selectInput("acp_vars", "Variables actives :", choices = quant_vars_actives, selected = quant_vars_actives[1:3], multiple = TRUE),
+                             selectInput( "acp_vars", "Variables actives :", choices = setdiff(quant_vars_actives, "releaseYear"),multiple = TRUE ),
                              selectInput("selected_brand", "Choix de la marque:", choices = marq_, selected = NULL, multiple = TRUE),
                              sliderInput("year_ranges", "Sélectionnez la plage d'années :", min = min_year, max = max_year, value = c(min_year, max_year)),
                              numericInput("contrib_value", "Valeur de contrib :", value = 50, min = 10, max = 100),
                              actionButton("run_acp", "Lancer l'ACP", class = "btn-success"),
                              actionButton("select_all_AC", "Sélectionner toutes les variables", class = "btn-info")
-                           ),
-                           column(6,
-                                  box(
-                                    title = "Sélectionnez les variables catégorielles", status = "primary", solidHeader = TRUE, width = 12,
-                                    selectInput("acp_cat_vars", "Variables catégorielles :", choices = cat_vars, selected = NULL, multiple = TRUE),
-                                    actionButton("apply_cat", "Appliquer", class = "btn-success")
-                                  )
                            )
                          ),
                          fluidRow( 
@@ -243,8 +268,7 @@ ui <- shinyUI(dashboardPage(
                            column(6, box(title = "Projection des variables", status = "primary", solidHeader = TRUE, width = 12, plotOutput("acp_var_plot"))),
                            # column(6, box(title = "Résumé de l'ACP", status = "primary", solidHeader = TRUE, width = 12, verbatimTextOutput("acp_results_text"))),
                            #column(6, box(title = "BiPlot", status = "primary", solidHeader = TRUE, width = 12, plotOutput("biplot"))),
-                           column(12,box(title='Data', status = "primary", solidHeader = TRUE, width = 12,dataTableOutput("clustered_table")),
-                                  downloadButton("downloadData3", "Télécharger les données"))
+                           column(12,box(title='Data', status = "primary", solidHeader = TRUE, width = 12,dataTableOutput("clustered_table")))
                          )
                 ),
                 tabPanel("Choix du nombre d'axes factorielles",
@@ -262,11 +286,8 @@ ui <- shinyUI(dashboardPage(
                 tabPanel("Vecteurs Propres",
                          box(title = "Vecteurs propres", status = "primary", solidHeader = TRUE, width = 12,
                              verbatimTextOutput("eigen_vectors"))
-                ),
-                tabPanel("Pourcentage d'inertie totale",
-                         box(title = "Pourcentage d'inertie totale", status = "primary", solidHeader = TRUE, width = 12, 
-                             verbatimTextOutput("inertia_percentage"))
                 )
+                
               )
       ),
       
@@ -335,8 +356,6 @@ ui <- shinyUI(dashboardPage(
               ),
               fluidRow( column(12, box(title = "Mémoire (memSize)", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_memSize"))),
                         column(12, box(title = "Bus de mémoire (memBusWidth)", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_memBusWidth"))),
-                        column(12, box(title = "Fréquence GPU (gpuClock)", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_gpuClock"))),
-                        column(12, box(title = "Fréquence Mémoire (memClock)", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_memClock"))),
                         column(12, box(title = "Shader Unifié (unifiedShader)", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_unifiedShader"))),
                         column(12, box(title = "TMU", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_tmu"))),
                         column(12, box(title = "rop", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_top")))
