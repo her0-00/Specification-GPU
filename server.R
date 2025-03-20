@@ -20,6 +20,7 @@ server <- function(input, output, session) {
     df_filtered
     
   })
+  
   # Création des listes pour les variables quantitatives et qualitatives en utilisant les données filtrées
   observe({
     df_data <- filtered_data()
@@ -134,39 +135,51 @@ server <- function(input, output, session) {
     }
   })
   
-  # Exécution de l'ACP -----
+  # Exécution de l'ACP et du clustering -----
   observeEvent(input$run_acp, {
     if (!is.null(input$acp_vars) && length(input$acp_vars) > 1) {
       reactive_acp$selected_vars <- input$acp_vars
       reactive_acp$result <- doitPerformACP(filtered_acp_data(), input$acp_vars)
+      
+      # Ensure that df_ACP_1 has the same columns as the data used for the ACP
+      selected_columns <- reactive_acp$selected_vars
+      df_ACP_1 <- filtered_data()[, selected_columns, drop = FALSE] %>% scale(center = TRUE, scale = TRUE)
+      
+      # Determine the optimal number of clusters using the "within-cluster sum of squares" method
+      output$nb_clust <- renderPlot({
+        fviz_nbclust(df_ACP_1, kmeans, method = "wss", k.max = 10, nstart = 100) +
+          labs(title = "Elbow Method for Optimal Number of Clusters")
+      })
+      
+      # Check the number of distinct points in the dataset
+      distinct_points <- nrow(unique(df_ACP_1))
+      
+      # Ensure the number of clusters does not exceed the number of distinct points
+      num_clusters <- min(5, distinct_points)
+      
+      # Perform clustering with the optimal number of clusters
+      cl2 <- kmeans(x = df_ACP_1, centers = num_clusters, nstart = 100)
+      
+   
+      # Plot the clusters
+      output$cluster_plot <- renderPlot({
+        fviz_cluster(cl2, geom = "point", data = df_ACP_1) +
+          labs(title = "Clustering des individus en ACP",
+               x = "PC1",
+               y = "PC2")
+      })
+      
+     
+      
     } else {
       reactive_acp$result <- NULL
       reactive_acp$selected_vars <- NULL
     }
   })
   
-  # Choix du nombre de clusters avec la méthode "within-cluster sum of squares" -----
-  output$nb_clust <- renderPlot({
-    req(reactive_acp$result)
-    df_ACP <- reactive_acp$result$coordinates
-    fviz_nbclust(df_ACP, FUNcluster = kmeans, method = "wss", k.max = 10, nstart = 100)
-  })
-  
-  # Exécution du clustering et visualisation des clusters -----
-  observeEvent(input$run_clustering, {
-    req(reactive_acp$result)
-    df_ACP <- reactive_acp$result$coordinates
-    cl2 <- kmeans(x = df_ACP, centers = 5, nstart = 100)
-    
-    output$cluster_plot <- renderPlot({
-      fviz_cluster(cl2, df_ACP, pointsize = 0)
-    })
-  })
-  
   # Affichage des résultats de l'ACP
   output$acp_ind_plot <- renderPlot({
     req(reactive_acp$result)
-    c <- filtered_data()$manufacturer
     plot_acp_ind(reactive_acp$result, filtered_data(), input$acp_cat_vars, input$contrib_value)
   })
   
@@ -231,7 +244,7 @@ server <- function(input, output, session) {
   # cos² a PC2
   output$cos2_PC2 <- renderPlot({
     req(reactive_acp$result)
-    fviz_cos2(reactive_acp[result], choice = "var", axes = 2, top = 10) +
+    fviz_cos2(reactive_acp$result, choice = "var", axes = 2, top = 10) +
       ggtitle("Qualité de la représentation des variables sur la PC2 (cos²)")
   })
   
