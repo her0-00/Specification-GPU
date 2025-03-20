@@ -10,7 +10,8 @@ ui <- shinyUI(dashboardPage(
       menuItem("ACP", tabName = "acp", icon = icon("chart-line")),
       menuItem("Etude Technique", tabName = "Etude_technique", icon = icon("cogs")),
       menuItem("Matrice de Corrélation", tabName = "correlation", icon = icon("th")),
-      menuItem("Évolution des GPU", tabName = "evolution", icon = icon("line-chart"))
+      menuItem("Évolution des GPU", tabName = "evolution", icon = icon("line-chart")),
+      menuItem("Choix du GPU adapté", tabName = "choix_gpu", icon = icon("microchip"))
     ),
     selectInput(
       inputId = "IGP",
@@ -371,7 +372,41 @@ ui <- shinyUI(dashboardPage(
                         column(12, box(title = "TMU", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_tmu"))),
                         column(12, box(title = "rop", status = "primary", solidHeader = TRUE, width = 12, plotlyOutput("evolution_plot_top")))
               )
+      ),
+      # Onglet Choix du GPU adapté -----
+      tabItem(tabName = "choix_gpu",
+              fluidRow(
+                box(title = "Sélection du profil utilisateur",
+                    status = "primary",
+                    solidHeader = TRUE,
+                    width = 12,
+                    selectInput("profil_gpu", "Choisissez un profil :", 
+                                choices = unique(filtered_acp_data$Profil_recommande),
+                                selected = unique(filtered_acp_data$Profil_recommande)[1])
+                )
+              ),
+              
+              fluidRow(
+                box(title = "Cartes graphiques recommandées",
+                    status = "primary",
+                    solidHeader = TRUE,
+                    width = 12,
+                    dataTableOutput("gpu_recommande_table")
+                )
+              ),
+              
+              fluidRow(
+                box(title = "Fiche descriptive de la carte sélectionnée",
+                    status = "primary",
+                    solidHeader = TRUE,
+                    width = 12,
+                    selectInput("selected_card", "Choisissez une carte :", 
+                                choices = NULL),
+                    uiOutput("gpu_card_description")
+                )
+              )
       )
+      
     )
   )
 )
