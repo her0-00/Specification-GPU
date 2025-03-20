@@ -1,5 +1,5 @@
 server <- function(input, output, session) {
-  
+ 
   # Sélectionner toutes les options dans les filtres
   observeEvent(input$select_all, {
     updateSelectInput(session, "IGP", selected = IGP)
@@ -21,33 +21,8 @@ server <- function(input, output, session) {
   })
   
   # Création des listes pour les variables quantitatives et qualitatives en utilisant les données filtrées
-  observe({
-    df_data <- filtered_data()
-    
-    # Variables quantitatives (numériques)
-    quant_vars <- names(df_data)[sapply(df_data, is.numeric)][2:8]
-    
-    # Variables qualitatives (facteurs ou catégoriques)
-    qual_vars <- names(df_data)[sapply(df, is.factor)]
-    
-    # Variables actives pour l'ACP (quantitatives uniquement)
-    quant_vars_actives <- quant_vars  # Modifiez ici si vous voulez limiter les variables spécifiques à l'ACP.
-    
-    # Variables catégorielles pour l'ACP
-    cat_vars <- qual_vars 
-    
-    updateSelectInput(session, "var_quanti", choices = quant_vars)
-    updateSelectInput(session, "var_quali", choices = qual_vars)
-    updateSelectInput(session, "acp_vars", choices = quant_vars)
-    updateSelectInput(session, "acp_cat_vars", choices = qual_vars)
-  })
   
-  # Filtrer les données selon la marque et la plage d'années sélectionnées
-  filtered_acp_data <- reactive({
-    req(input$selected_brand, input$year_range)
-    filtered_data() %>%
-      filter(manufacturer == input$selected_brand, releaseYear >= input$year_ranges[1], releaseYear <= input$year_ranges[2])
-  })
+  
   
   # Générer la table des données
   output$table <- renderDataTable({
@@ -169,6 +144,12 @@ server <- function(input, output, session) {
              yaxis = list(title = "Nombre d'occurrences"))
   })
   
+  # Filtrer les données selon la marque et la plage d'années sélectionnées
+  filtered_acp_data <- reactive({
+    req(input$selected_brand, input$year_range)
+    filtered_data() %>%
+      filter(manufacturer == input$selected_brand, releaseYear >= input$year_ranges[1], releaseYear <= input$year_ranges[2])
+  })
 
   
   # Implémentation de l'ACP
@@ -301,6 +282,47 @@ server <- function(input, output, session) {
       reactive_acp$selected_vars <- NULL
     }
   })
+  
+  # Met à jour le tableau en fonction du profil sélectionné
+  output$gpu_recommande_table <- renderDataTable({
+    req(input$profil_gpu)
+    df_filtre <-  filtered_acp_data[ filtered_acp_data$Profil_recommande == input$profil_gpu, ]
+    
+    # Mise à jour des choix pour la carte à décrire
+    updateSelectInput(session, "selected_card", choices = unique(df_filtre$productName))
+    
+    df_filtre
+  })
+  
+  # Affichage de la fiche de la carte sélectionnée
+  output$gpu_card_description <- renderUI({
+    req(input$selected_card)
+    selected_data <- filtered_acp_data[filtered_acp_data$productName == input$selected_card, ]
+    if (nrow(selected_data) == 0) return(NULL)
+    
+   # image_url <- selected_data$image_url[1]
+    
+    tags$div(
+      style = "display: flex; align-items: flex-start; gap: 30px; padding: 20px;",
+      
+    #  tags$img(
+     #   src = image_url, 
+      #  height = "200px", 
+       # style = "border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.2);"
+      #),
+      
+      tags$div(
+        tags$h3(selected_data$productName[1], style = "margin-bottom: 10px;"),
+        tags$p(strong("Marque : "), selected_data$manufacturer[1]),
+        tags$p(strong("Année de sortie : "), selected_data$releaseYear[1]),
+        tags$p(strong("Mémoire : "), paste0(selected_data$memSize[1], " Mo")),
+        tags$p(strong("Type de mémoire : "), selected_data$memType[1]),
+        tags$p(strong("Fréquence GPU : "), paste0(selected_data$gpuClock[1], " MHz")),
+        tags$p(strong("Profil recommandé : "), selected_data$Profil_recommande[1])
+      )
+    )
+  })
+  
   
   # Affichage des résultats de l'ACP
   output$acp_ind_plot <- renderPlot({
