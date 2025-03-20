@@ -241,8 +241,9 @@ ui <- shinyUI(dashboardPage(
                            column(6, box(title = "Clustered Data", status = "primary", solidHeader = TRUE, width = 12, plotOutput("cluster_plot")
                                   ,numericInput("n_cluster", "Nombre de cluster :", value = 3, min = 0, max = 5))),
                            column(6, box(title = "Projection des variables", status = "primary", solidHeader = TRUE, width = 12, plotOutput("acp_var_plot"))),
-                           column(6, box(title = "Résumé de l'ACP", status = "primary", solidHeader = TRUE, width = 12, verbatimTextOutput("acp_results_text"))),
-                           column(6, box(title = "BiPlot", status = "primary", solidHeader = TRUE, width = 12, plotOutput("biplot")))
+                          # column(6, box(title = "Résumé de l'ACP", status = "primary", solidHeader = TRUE, width = 12, verbatimTextOutput("acp_results_text"))),
+                           #column(6, box(title = "BiPlot", status = "primary", solidHeader = TRUE, width = 12, plotOutput("biplot"))),
+                           column(12,box(title='Data', status = "primary", solidHeader = TRUE, width = 12,dataTableOutput("clustered_table")))
                          )
                 ),
                 tabPanel("Choix du nombre d'axes factorielles",
