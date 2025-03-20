@@ -222,7 +222,7 @@ ui <- shinyUI(dashboardPage(
                              title = "Sélectionnez les variables pour l'ACP", status = "primary", solidHeader = TRUE, width = 6,
                              selectInput("acp_vars", "Variables actives :", choices = quant_vars_actives, selected = quant_vars_actives[1:3], multiple = TRUE),
                              selectInput("selected_brand", "Choix de la marque:", choices = marq_, selected = NULL, multiple = TRUE),
-                             sliderInput("year_ranges", "Sélectionnez la plage d'années :", min = min(df$releaseYear), max = max(df$releaseYear), value = c(min(df$releaseYear), max(df$releaseYear))),
+                             sliderInput("year_ranges", "Sélectionnez la plage d'années :", min = min_year, max = max_year, value = c(min_year, max_year)),
                              numericInput("contrib_value", "Valeur de contrib :", value = 50, min = 10, max = 100),
                              actionButton("run_acp", "Lancer l'ACP", class = "btn-success"),
                              actionButton("select_all_AC", "Sélectionner toutes les variables", class = "btn-info")
@@ -239,11 +239,12 @@ ui <- shinyUI(dashboardPage(
                            column(6, box(title = "Projection des individus", status = "primary", solidHeader = TRUE, width = 12, plotOutput("acp_ind_plot"))),
                            column(6, box(title = "Clustered Data", status = "primary", solidHeader = TRUE, width = 12, plotOutput("nb_clust"))),
                            column(6, box(title = "Clustered Data", status = "primary", solidHeader = TRUE, width = 12, plotOutput("cluster_plot")
-                                  ,numericInput("n_cluster", "Nombre de cluster :", value = 3, min = 0, max = 5))),
+                                         ,numericInput("n_cluster", "Nombre de cluster :", value = 3, min = 0, max = 5))),
                            column(6, box(title = "Projection des variables", status = "primary", solidHeader = TRUE, width = 12, plotOutput("acp_var_plot"))),
-                          # column(6, box(title = "Résumé de l'ACP", status = "primary", solidHeader = TRUE, width = 12, verbatimTextOutput("acp_results_text"))),
+                           # column(6, box(title = "Résumé de l'ACP", status = "primary", solidHeader = TRUE, width = 12, verbatimTextOutput("acp_results_text"))),
                            #column(6, box(title = "BiPlot", status = "primary", solidHeader = TRUE, width = 12, plotOutput("biplot"))),
-                           column(12,box(title='Data', status = "primary", solidHeader = TRUE, width = 12,dataTableOutput("clustered_table")))
+                           column(12,box(title='Data', status = "primary", solidHeader = TRUE, width = 12,dataTableOutput("clustered_table")),
+                                  downloadButton("downloadData3", "Télécharger les données"))
                          )
                 ),
                 tabPanel("Choix du nombre d'axes factorielles",
