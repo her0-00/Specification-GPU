@@ -30,7 +30,6 @@ df<- df[!duplicated(df[, 1:3]), ]
 # Transformation des colonnes en facteurs (si applicable)
 fact <- c(1:2,11:14)  # Indices des colonnes à transformer en facteurs (ajustez selon vos données)
 df[fact] <- lapply(df[, fact], as.factor)
-
 min_year=min(df$releaseYear)
 max_year=max(df$releaseYear)
 # Variables quantitatives (numériques)
@@ -51,6 +50,7 @@ IGP <- unique(df$igp)  # Assurez-vous que "igp" est une colonne existante
 marque <- unique(df$manufacturer)  # Assurez-vous que "manufacturer" est une colonne existante
 marq_ <- unique(df$manufacturer)  # Définition de marq_
 theme_set(theme_minimal())  # Définit un thème global pour les graphiques
+
 
 # Fonction pour calculer la matrice de variances-covariances
 get_S <- function(data) {
