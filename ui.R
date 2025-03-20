@@ -225,6 +225,7 @@ ui <- shinyUI(dashboardPage(
                              sliderInput("year_ranges", "Sélectionnez la plage d'années :", min = min(df$releaseYear), max = max(df$releaseYear), value = c(min(df$releaseYear), max(df$releaseYear))),
                              numericInput("contrib_value", "Valeur de contrib :", value = 50, min = 10, max = 100),
                              actionButton("run_acp", "Lancer l'ACP", class = "btn-success"),
+                             actionButton("run_clustering", "Lancer le clustering", class = "btn-primary") ,
                              actionButton("select_all_AC", "Sélectionner toutes les variables", class = "btn-info")
                            ),
                            column(6,
@@ -237,6 +238,8 @@ ui <- shinyUI(dashboardPage(
                          ),
                          fluidRow( 
                            column(6, box(title = "Projection des individus", status = "primary", solidHeader = TRUE, width = 12, plotOutput("acp_ind_plot"))),
+                           column(6, box(title = "Clustered Data", status = "primary", solidHeader = TRUE, width = 12, plotOutput("nb_clust"))),
+                           column(6, box(title = "Clustered Data", status = "primary", solidHeader = TRUE, width = 12, plotOutput("cluster_plot"))),
                            column(6, box(title = "Projection des variables", status = "primary", solidHeader = TRUE, width = 12, plotOutput("acp_var_plot"))),
                            column(6, box(title = "Résumé de l'ACP", status = "primary", solidHeader = TRUE, width = 12, verbatimTextOutput("acp_results_text"))),
                            column(6, box(title = "BiPlot", status = "primary", solidHeader = TRUE, width = 12, plotOutput("biplot")))
