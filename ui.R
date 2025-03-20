@@ -16,18 +16,11 @@ ui <- shinyUI(dashboardPage(
       inputId = "IGP",
       label = "IGP ? :",
       choices = IGP,
-      selected = IGP,
+      selected = IGP[1],
       multiple = FALSE
     ),
-    selectInput(
-      inputId = "Marque",
-      label = "Marque ? :",
-      choices = marque,
-      selected = marque,
-      multiple = TRUE
-    ),
     actionButton("select_all", "Tout sélectionner"),
-    actionButton("apply_filters", "Rafraîchir"),
+   
     
     # Ajout de mon nom et descriptif -----
     br(),
@@ -116,6 +109,7 @@ ui <- shinyUI(dashboardPage(
       position: absolute !important; /* Fixe la position */
     }
     
+    
     .selectize-dropdown-content {
       position: relative !important; /* Empêche le flottement de la liste */
     }
@@ -164,82 +158,82 @@ ui <- shinyUI(dashboardPage(
       # Deuxième section : Analyses descriptives -----
       tabItem(tabName = "resume",
               fluidRow(
-                  # Onglet des visualisations
-                  tabPanel("Visualisation",box(
+                # Onglet des visualisations
+                tabPanel("Visualisation",box(
+                  fluidRow(
+                    column(12,
+                           selectInput(
+                             inputId = "var_quanti1",
+                             label = "Choisissez une variable quantitative :",
+                             choices = setdiff(quant_vars, c("releaseYear")),  # Liste des variables quantitatives
+                             selected = "memeSize")
+                    ))
+                  
+                  ,
+                  fluidRow(
+                    column(12,
+                           plotlyOutput("histogram"))))
+                  
+                  
+                  ,
+                  
+                  box(
                     fluidRow(
                       column(12,
                              selectInput(
-                               inputId = "var_quanti1",
+                               inputId = "var_quanti",
                                label = "Choisissez une variable quantitative :",
                                choices = setdiff(quant_vars, c("releaseYear")),  # Liste des variables quantitatives
                                selected = "memeSize")
-                      ))
-                    
-                    ,
-                    fluidRow(
+                      ),
+                      column(12,plotlyOutput("boxplot")))),
+                  
+                  box(height = "600px",
                       column(12,
-                             plotlyOutput("histogram"))))
-                    
-                    
-                    ,
-                    
-                    box(
+                             # Sélection des variables X et Y pour le Scatter Plot
+                             selectInput("var_quanti_x", "Variable X (Scatter Plot) :", 
+                                         choices = setdiff(quant_vars, c("productName","releaseYear")),
+                                         selected = "gpuClock"),
+                             selectInput("var_quanti_y", "Variable Y (Scatter Plot) :", 
+                                         choices = setdiff(quant_vars, c("productName","releaseYear")),
+                                         selected = "memClock"),
+                             column(12,plotlyOutput("scatter"))
+                      )),
+                  
+                  box(height = "600px",
                       fluidRow(
                         column(12,
                                selectInput(
-                                 inputId = "var_quanti",
-                                 label = "Choisissez une variable quantitative :",
-                                 choices = setdiff(quant_vars, c("releaseYear")),  # Liste des variables quantitatives
-                                 selected = "memeSize")
-                        ),
-                        column(12,plotlyOutput("boxplot")))),
-                    
-                    box(height = "600px",
+                                 inputId = "var_quali",
+                                 label = "Choisissez une variable qualitative :",
+                                 choices = setdiff(names(df)[sapply(df, is.factor)], c("productName", "igp")),  # Liste des variables qualitatives
+                                 selected = names(df)[sapply(df, is.factor)][1]
+                                 
+                               ))),
+                      fluidRow(
                         column(12,
-                               # Sélection des variables X et Y pour le Scatter Plot
-                               selectInput("var_quanti_x", "Variable X (Scatter Plot) :", 
-                                           choices = setdiff(quant_vars, c("productName","releaseYear")),
-                                           selected = "gpuClock"),
-                               selectInput("var_quanti_y", "Variable Y (Scatter Plot) :", 
-                                           choices = setdiff(quant_vars, c("productName","releaseYear")),
-                                           selected = "memClock"),
-                               column(12,plotlyOutput("scatter"))
-                        )),
-                    
-                    box(height = "600px",
-                        fluidRow(
-                          column(12,
-                                 selectInput(
-                                   inputId = "var_quali",
-                                   label = "Choisissez une variable qualitative :",
-                                   choices = setdiff(names(df)[sapply(df, is.factor)], c("productName", "igp")),  # Liste des variables qualitatives
-                                   selected = names(df)[sapply(df, is.factor)][1]
-                                   
-                                 ))),
-                        fluidRow(
-                          column(12,
-                                 plotlyOutput("barplot"))))
-                    
-                    ,
-                    box(width = 12 , height = "700px",
-                        fluidRow(
-                          column(12,
-                                 selectInput(
-                                   inputId = "var_quali2",
-                                   label = "Choisissez une variable qualitative :",
-                                   choices = setdiff(qual_vars, c("productName","igp","gpuChip")),  # Liste des variables qualitatives
-                                   selected = "memType"
-                                   
-                                 ))
-                          ,column(12,plotlyOutput("Pie", height = "500px"))
-                          
-                        )
-                    ),
-                    
-                    
-                  )
+                               plotlyOutput("barplot"))))
+                  
+                  ,
+                  box(width = 12 , height = "700px",
+                      fluidRow(
+                        column(12,
+                               selectInput(
+                                 inputId = "var_quali2",
+                                 label = "Choisissez une variable qualitative :",
+                                 choices = setdiff(qual_vars, c("productName","igp","gpuChip")),  # Liste des variables qualitatives
+                                 selected = "memType"
+                                 
+                               ))
+                        ,column(12,plotlyOutput("Pie", height = "500px"))
+                        
+                      )
+                  ),
                   
                   
+                )
+                
+                
                 
               )
       ),
@@ -252,25 +246,40 @@ ui <- shinyUI(dashboardPage(
                            box(
                              title = "Sélectionnez les variables pour l'ACP", status = "primary", solidHeader = TRUE, width = 12,
                              #selectInput("acp_vars", "Variables actives :", choices = quant_vars_actives, selected = quant_vars_actives[1:3], multiple = TRUE),
-                             selectInput( "acp_vars", "Variables actives :", choices = setdiff(quant_vars_actives, "releaseYear"),multiple = TRUE ),
-                             selectInput("selected_brand", "Choix de la marque:", choices = marq_, selected = NULL, multiple = TRUE),
+                             selectInput( "acp_vars", "Variables actives :", choices =quant_vars,multiple = TRUE ),
+                             selectInput("selected_brand", "Choix de la marque:", choices = marq_, selected = marq_, multiple = TRUE),
                              sliderInput("year_ranges", "Sélectionnez la plage d'années :", min = min_year, max = max_year, value = c(min_year, max_year)),
                              numericInput("contrib_value", "Valeur de contrib :", value = 50, min = 10, max = 100),
                              actionButton("run_acp", "Lancer l'ACP", class = "btn-success"),
                              actionButton("select_all_AC", "Sélectionner toutes les variables", class = "btn-info")
                            )
                          ),
+                         
                          fluidRow( 
                            column(6, box(title = "Projection des individus", status = "primary", solidHeader = TRUE, width = 12, plotOutput("acp_ind_plot"))),
                            column(6, box(title = "Clustered Data", status = "primary", solidHeader = TRUE, width = 12, plotOutput("nb_clust"))),
                            column(6, box(title = "Clustered Data", status = "primary", solidHeader = TRUE, width = 12, plotOutput("cluster_plot")
-                                         ,numericInput("n_cluster", "Nombre de cluster :", value = 3, min = 0, max = 5))),
+                                         )),
                            column(6, box(title = "Projection des variables", status = "primary", solidHeader = TRUE, width = 12, plotOutput("acp_var_plot"))),
                            # column(6, box(title = "Résumé de l'ACP", status = "primary", solidHeader = TRUE, width = 12, verbatimTextOutput("acp_results_text"))),
                            #column(6, box(title = "BiPlot", status = "primary", solidHeader = TRUE, width = 12, plotOutput("biplot"))),
                            column(12,box(title='Data', status = "primary", solidHeader = TRUE, width = 12,dataTableOutput("clustered_table")))
                          )
                 ),
+                tabPanel("KPI des Clusters GPU",
+                         fluidPage(
+                           h2("Indicateurs de performance par cluster"),
+                           tableOutput("kpiCluster"),
+                           br(),
+                           h3("Cartes graphiques les plus performantes par cluster"),
+                           tableOutput("topCardsPerCluster"),
+                           br(),
+                           h3("Recommandations d’usage par cluster"),
+                           tableOutput("clusterMeaning")
+                         )
+                )
+                ,
+                
                 tabPanel("Choix du nombre d'axes factorielles",
                          box(title = "Choix du nombre d'axes factorielles", status = "primary", solidHeader = TRUE, width = 12,
                              plotOutput("acp_eigenvalues"))
@@ -288,7 +297,9 @@ ui <- shinyUI(dashboardPage(
                              verbatimTextOutput("eigen_vectors"))
                 )
                 
+                
               )
+              
       ),
       
       # Onglet Étude Technique
@@ -348,7 +359,7 @@ ui <- shinyUI(dashboardPage(
       tabItem(tabName = "evolution",
               fluidRow(
                 column(6,
-                       selectInput("selected_brand", "Sélectionnez la marque :", choices = unique(df$manufacturer), selected = unique(df$manufacturer)[1])
+                       selectInput("selected_brand2", "Sélectionnez la marque :", choices = unique(df$manufacturer), selected = unique(df$manufacturer)[1])
                 ),
                 column(6,
                        sliderInput("year_range", "Sélectionnez la plage d'années :", min = min(df$releaseYear), max = max(df$releaseYear), value = c(min(df$releaseYear), max(df$releaseYear)))
