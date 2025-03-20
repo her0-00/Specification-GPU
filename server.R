@@ -134,16 +134,40 @@ server <- function(input, output, session) {
       updateSelectInput(session, "acp_vars", selected = character(0))
     }
   })
-  
-  # Exécution de l'ACP et du clustering -----
+  # Execution de l'ACP ----
   observeEvent(input$run_acp, {
     if (!is.null(input$acp_vars) && length(input$acp_vars) > 1) {
       reactive_acp$selected_vars <- input$acp_vars
+      print("Selected Variables for ACP:")
+      print(reactive_acp$selected_vars)  # Print selected variables for ACP
+      
       reactive_acp$result <- doitPerformACP(filtered_acp_data(), input$acp_vars)
+      print("ACP Result:")
+      print(reactive_acp$result)  # Print ACP result
+      
+      # Filter individuals based on cos2 values
+      cos2_values <- reactive_acp$result$ind$cos2
+      print("Cos2 Values:")
+      print(cos2_values)  # Print cos2 values
+      
+      # Select the top input$contrib_value individuals based on their cos2 values
+      total_cos2 <- rowSums(cos2_values[,1:2])
+      top_individuals <- order(total_cos2, decreasing = TRUE)[1:input$contrib_value]
+      print("Top Individuals:")
+      print(top_individuals)  # Print top individuals
+      
+      filtered_acp_data <- filtered_acp_data()[top_individuals, , drop = FALSE]
+      print("Filtered ACP Data:")
+      print(filtered_acp_data)  # Print filtered ACP data
       
       # Ensure that df_ACP_1 has the same columns as the data used for the ACP
       selected_columns <- reactive_acp$selected_vars
-      df_ACP_1 <- filtered_data()[, selected_columns, drop = FALSE] %>% scale(center = TRUE, scale = TRUE)
+      print("Selected Columns:")
+      print(selected_columns)  # Print selected columns
+      
+      df_ACP_1 <- filtered_acp_data[, selected_columns, drop = FALSE] %>% scale(center = TRUE, scale = TRUE)
+      print("Scaled ACP Data (df_ACP_1):")
+      print(df_ACP_1)  # Print scaled ACP data
       
       # Determine the optimal number of clusters using the "within-cluster sum of squares" method
       output$nb_clust <- renderPlot({
@@ -153,24 +177,26 @@ server <- function(input, output, session) {
       
       # Check the number of distinct points in the dataset
       distinct_points <- nrow(unique(df_ACP_1))
+      print("Number of Distinct Points:")
+      print(distinct_points)  # Print number of distinct points
       
       # Ensure the number of clusters does not exceed the number of distinct points
-      num_clusters <- min(5, distinct_points)
+      num_clusters <- input$n_cluster
+      print("Number of Clusters:")
+      print(num_clusters)  # Print number of clusters
       
       # Perform clustering with the optimal number of clusters
       cl2 <- kmeans(x = df_ACP_1, centers = num_clusters, nstart = 100)
+      print("Clustering Result (cl2):")
+      print(cl2)  # Print clustering result
       
-   
       # Plot the clusters
       output$cluster_plot <- renderPlot({
-        fviz_cluster(cl2, geom = "point", data = df_ACP_1) +
+        fviz_cluster(cl2, geom = "point", data = df_ACP_1, label = rownames(filtered_acp_data)) +
           labs(title = "Clustering des individus en ACP",
                x = "PC1",
                y = "PC2")
       })
-      
-     
-      
     } else {
       reactive_acp$result <- NULL
       reactive_acp$selected_vars <- NULL
