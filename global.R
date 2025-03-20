@@ -80,10 +80,10 @@ get_InertiaAxes <- function(data) {
 }
 
 # Fonction pour réaliser l'ACP
-actives <- df[, c(3:10)]
+
 # Normalisation des variables quantitatives
 data_scaled <- as.data.frame(scale(actives[, -1]))
-quant_vars_actives <- colnames(actives[, -1])
+quant_vars_actives <- quant_vars
 update_acp <- function(input, df) {
   if (!is.null(input$acp_vars) && length(input$acp_vars) > 1) {
     reactive_acp$selected_vars <- input$acp_vars
