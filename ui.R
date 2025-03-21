@@ -20,8 +20,7 @@ ui <- shinyUI(dashboardPage(
       selected = IGP[1],
       multiple = FALSE
     ),
-    actionButton("select_all", "Tout sélectionner"),
-   
+    
     
     # Ajout de mon nom et descriptif -----
     br(),
@@ -260,7 +259,7 @@ ui <- shinyUI(dashboardPage(
                            column(6, box(title = "Projection des individus", status = "primary", solidHeader = TRUE, width = 12, plotOutput("acp_ind_plot"))),
                            column(6, box(title = "Clustered Data", status = "primary", solidHeader = TRUE, width = 12, plotOutput("nb_clust"))),
                            column(6, box(title = "Clustered Data", status = "primary", solidHeader = TRUE, width = 12, plotOutput("cluster_plot")
-                                         )),
+                           )),
                            column(6, box(title = "Projection des variables", status = "primary", solidHeader = TRUE, width = 12, plotOutput("acp_var_plot"))),
                            # column(6, box(title = "Résumé de l'ACP", status = "primary", solidHeader = TRUE, width = 12, verbatimTextOutput("acp_results_text"))),
                            #column(6, box(title = "BiPlot", status = "primary", solidHeader = TRUE, width = 12, plotOutput("biplot"))),
@@ -376,16 +375,25 @@ ui <- shinyUI(dashboardPage(
       # Onglet Choix du GPU adapté -----
       tabItem(tabName = "choix_gpu",
               fluidRow(
-                box(title = "Sélection du profil utilisateur",
+                box(title = "Sélection du domaine",
                     status = "primary",
                     solidHeader = TRUE,
                     width = 12,
-                    selectInput("profil_gpu", "Choisissez un profil :", 
-                                choices = unique(filtered_acp_data$Profil_recommande),
-                                selected = unique(filtered_acp_data$Profil_recommande)[1])
+                    selectInput("profil_gpu", "Choisissez un domaine possible parmi la liste :", 
+                                choices = unique(filtered_acp_data_$Profil_recommande),
+                                selected = unique(filtered_acp_data_$Profil_recommande)[1])
                 )
               ),
-              
+              fluidRow(
+                valueBoxOutput("offre"),
+                valueBoxOutput("vram_mean"),
+                valueBoxOutput("gpu_clock_mean"),
+                valueBoxOutput("mem_bus_width_mean"),
+                valueBoxOutput("unified_shader_mean"),
+                valueBoxOutput("mem_clock_mean"),
+                valueBoxOutput("profile_recommendation")
+              )
+              ,
               fluidRow(
                 box(title = "Cartes graphiques recommandées",
                     status = "primary",
