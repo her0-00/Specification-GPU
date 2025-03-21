@@ -81,16 +81,22 @@ server <- function(input, output, session) {
   
   # HISTOGRAMME
   output$histogram <- renderPlotly({
-    req(input$var_quanti1)  
+    req(input$var_quanti1)
+    
+    # Calculer la taille du bin comme la plus proche puissance de 2
+    bin_width <- 2^(floor(log2(diff(range(df[[input$var_quanti1]])) / 30)))  # Estimation du bin width
+    
     p <- ggplot(df, aes_string(x = input$var_quanti1)) +
-      geom_histogram(binwidth = 10, fill = "blue", color = "black", alpha = 0.7) +
+      geom_histogram(binwidth = bin_width, fill = "blue", color = "black", alpha = 0.7) +
       labs(
         title = paste("Histogramme de", input$var_quanti1),
         x = input$var_quanti1,
         y = "Fréquence"
       ) 
+    
     ggplotly(p)  # Conversion en graphique interactif
   })
+  
   
   # boxplot
   output$boxplot <- renderPlotly({
@@ -110,20 +116,21 @@ server <- function(input, output, session) {
   
   # Répartition des types de mémoire (Pie Chart)
   output$Pie <- renderPlotly({
-    req(input$var_quali2, input$var_quanti)
+    req(input$var_quali2)
     
     # Filtrer les données pour supprimer les valeurs contenant 'gpuChip*' dans var_quali2
     df_mem <- df %>%
       filter(!grepl("gpuChip\\*", !!sym(input$var_quali2))) %>%  # Exclure les valeurs contenant 'gpuChip*'
       group_by(!!sym(input$var_quali2)) %>%
-      summarise(value = sum(!!sym(input$var_quanti), na.rm = TRUE))
+      summarise(value = n())  # Nombre d'occurrences de chaque catégorie
     
     plot_ly(df_mem, 
-            labels = ~get(input$var_quali2),  
-            values = ~value,                 
+            labels = ~get(input$var_quali2),  # Catégories de la variable qualitative
+            values = ~value,                  # Nombre d'occurrences pour chaque catégorie
             type = "pie") %>%
-      layout(title = paste("Répartition de", input$var_quanti, "par", input$var_quali2))
+      layout(title = paste("Répartition par", input$var_quali2))
   })
+  
   
   # Nuage de point
   output$scatter <- renderPlotly({
@@ -132,7 +139,6 @@ server <- function(input, output, session) {
     plot_ly(df, 
             x = ~get(input$var_quanti_x), 
             y = ~get(input$var_quanti_y), 
-            color = ~get(input$var_quali),
             type = "scatter",
             mode = "markers") %>%
       layout(title = paste("Corrélation entre", input$var_quanti_x, "et", input$var_quanti_y),
@@ -142,25 +148,20 @@ server <- function(input, output, session) {
   
   # barchart
   output$barplot <- renderPlotly({
-    req(input$var_quali)
-    
-    # Filtrer les variables qualitatives indésirables (par exemple, "productName" et "igp")
-    if (input$var_quali %in% c("productName", "igp")) {
-      return(NULL)  # Si la variable sélectionnée est "productName" ou "igp", ne pas afficher le graphique
-    }
+    req(input$var_quali3)
     
     # Calcul du nombre d'occurrences pour chaque valeur de la variable qualitative
     df_bar <- df %>%
-      group_by(!!sym(input$var_quali)) %>%
+      group_by(!!sym(input$var_quali3)) %>%
       summarise(value = n())  # Calcul du nombre d'occurrences pour chaque catégorie de la variable qualitative
     
     # Affichage du graphique
     plot_ly(df_bar, 
-            x = ~get(input$var_quali),  # Variable qualitative sur l'axe des abscisses
+            x = ~get(input$var_quali3),  # Variable qualitative sur l'axe des abscisses
             y = ~value,  # Le nombre d'occurrences sur l'axe des ordonnées
             type = "bar") %>%
-      layout(title = paste(input$var_quali),
-             xaxis = list(title = input$var_quali),
+      layout(title = paste(input$var_quali3),
+             xaxis = list(title = input$var_quali3),
              yaxis = list(title = "Nombre d'occurrences"))
   })
   
@@ -180,6 +181,17 @@ server <- function(input, output, session) {
     } else {
       updateSelectInput(session, "acp_vars", selected = character(0))
     }
+  })
+  # Synchroniser les choix des deux selectInput
+  observe({
+    # Mettre à jour le deuxième selectInput lorsque le premier change
+    updateSelectInput(session, "var_quanti", selected = input$var_quanti1)
+  })
+  
+  # Synchroniser les choix des deux selectInput
+  observe({
+    # Mettre à jour le deuxième selectInput lorsque le premier change
+    updateSelectInput(session, "var_quanti1", selected = input$var_quanti)
   })
   
   # Execution de l'ACP ----
@@ -648,5 +660,6 @@ server <- function(input, output, session) {
       NULL
     }
   })
+ 
   
 }
