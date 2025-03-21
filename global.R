@@ -34,7 +34,7 @@ quant_vars <- names(df)[sapply(df, is.numeric)][2:8]
 
 # Variables qualitatives (facteurs ou catégoriques)
 qual_vars <- names(df)[sapply(df, is.factor)]
-
+qual_vars_modif <- setdiff(qual_vars , c("productName", "igp"))
 # Variables actives pour l'ACP (quantitatives uniquement)
 quant_vars_actives <- quant_vars  # Modifiez ici si vous voulez limiter les variables spécifiques à l'ACP.
 
