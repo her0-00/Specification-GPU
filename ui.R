@@ -1,6 +1,6 @@
 # Initiation de l'UI -----
 ui <- shinyUI(dashboardPage(
-  dashboardHeader(title = "Caractérisation des GPU"),
+  dashboardHeader(title = "Caractérisation des GPU")  ,
   
   # Contenu de la barre latérale ------
   dashboardSidebar(
