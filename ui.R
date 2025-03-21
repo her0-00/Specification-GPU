@@ -164,8 +164,8 @@ ui <- shinyUI(dashboardPage(
                     column(12,
                            selectInput(
                              inputId = "var_quanti1",
-                             label = "Choisissez une variable quantitative :",
-                             choices = setdiff(quant_vars, c("releaseYear")),  # Liste des variables quantitatives
+                             label = "Choisissez une caractéristique quantitative :",
+                             choices = setdiff(quant_vars, c("releaseYear")),  # Liste des caractéristiques quantitatives
                              selected = "memeSize")
                     ))
                   
@@ -182,21 +182,21 @@ ui <- shinyUI(dashboardPage(
                       column(12,
                              selectInput(
                                inputId = "var_quanti",
-                               label = "Choisissez une variable quantitative :",
-                               choices = setdiff(quant_vars, c("releaseYear")),  # Liste des variables quantitatives
+                               label = "Choisissez une caractéristique quantitative :",
+                               choices = setdiff(quant_vars, c("releaseYear")),  # Liste des caractéristiques quantitatives
                                selected = "memeSize")
                       ),
                       column(12,plotlyOutput("boxplot")))),
                   
                   box(height = "600px",
                       column(12,
-                             # Sélection des variables X et Y pour le Scatter Plot
-                             selectInput("var_quanti_x", "Variable X (Scatter Plot) :", 
+                             # Sélection des caractéristiques X et Y pour le Scatter Plot
+                             selectInput("var_quanti_x", "caractéristique X (Scatter Plot) :", 
                                          choices = setdiff(quant_vars, c("productName","releaseYear")),
                                          selected = "gpuClock"),
-                             selectInput("var_quanti_y", "Variable Y (Scatter Plot) :", 
+                             selectInput("var_quanti_y", "caractéristique Y (Scatter Plot) :", 
                                          choices = setdiff(quant_vars, c("productName","releaseYear")),
-                                         selected = "memClock"),
+                                         selected = "gpuClock"),
                              column(12,plotlyOutput("scatter"))
                       )),
                   
@@ -204,10 +204,10 @@ ui <- shinyUI(dashboardPage(
                       fluidRow(
                         column(12,
                                selectInput(
-                                 inputId = "var_quali",
-                                 label = "Choisissez une variable qualitative :",
-                                 choices = setdiff(names(df)[sapply(df, is.factor)], c("productName", "igp")),  # Liste des variables qualitatives
-                                 selected = names(df)[sapply(df, is.factor)][1]
+                                 inputId = "var_quali3",
+                                 label = "Choisissez une caractéristique qualitative :",
+                                 choices = setdiff(qual_vars, c("productName","igp","gpuChip")),  # Liste des caractéristiques qualitatives
+                                 selected = "memType"
                                  
                                ))),
                       fluidRow(
@@ -220,9 +220,9 @@ ui <- shinyUI(dashboardPage(
                         column(12,
                                selectInput(
                                  inputId = "var_quali2",
-                                 label = "Choisissez une variable qualitative :",
-                                 choices = setdiff(qual_vars, c("productName","igp","gpuChip")),  # Liste des variables qualitatives
-                                 selected = "memType"
+                                 label = "Choisissez une caractéristique qualitative :",
+                                 choices = setdiff(qual_vars, c("productName","igp","gpuChip")),  # Liste des caractéristiques qualitatives
+                                 selected = "manufacturer"
                                  
                                ))
                         ,column(12,plotlyOutput("Pie", height = "500px"))
@@ -244,14 +244,14 @@ ui <- shinyUI(dashboardPage(
                 tabPanel("Affichage des projections",
                          fluidRow(
                            box(
-                             title = "Sélectionnez les variables pour l'ACP", status = "primary", solidHeader = TRUE, width = 12,
-                             #selectInput("acp_vars", "Variables actives :", choices = quant_vars_actives, selected = quant_vars_actives[1:3], multiple = TRUE),
-                             selectInput( "acp_vars", "Variables actives :", choices =quant_vars,multiple = TRUE ),
+                             title = "Sélectionnez les caractéristiques pour l'ACP", status = "primary", solidHeader = TRUE, width = 12,
+                             #selectInput("acp_vars", "caractéristiques actives :", choices = quant_vars_actives, selected = quant_vars_actives[1:3], multiple = TRUE),
+                             selectInput( "acp_vars", "caractéristiques actives :", choices =quant_vars,multiple = TRUE ),
                              selectInput("selected_brand", "Choix de la marque:", choices = marq_, selected = marq_, multiple = TRUE),
                              sliderInput("year_ranges", "Sélectionnez la plage d'années :", min = min_year, max = max_year, value = c(min_year, max_year)),
                              numericInput("contrib_value", "Valeur de contrib :", value = 50, min = 10, max = 100),
                              actionButton("run_acp", "Lancer l'ACP", class = "btn-success"),
-                             actionButton("select_all_AC", "Sélectionner toutes les variables", class = "btn-info")
+                             actionButton("select_all_AC", "Sélectionner toutes les caractéristiques", class = "btn-info")
                            )
                          ),
                          
@@ -260,7 +260,7 @@ ui <- shinyUI(dashboardPage(
                            column(6, box(title = "Clustered Data", status = "primary", solidHeader = TRUE, width = 12, plotOutput("nb_clust"))),
                            column(6, box(title = "Clustered Data", status = "primary", solidHeader = TRUE, width = 12, plotOutput("cluster_plot")
                            )),
-                           column(6, box(title = "Projection des variables", status = "primary", solidHeader = TRUE, width = 12, plotOutput("acp_var_plot"))),
+                           column(6, box(title = "Projection des caractéristiques", status = "primary", solidHeader = TRUE, width = 12, plotOutput("acp_var_plot"))),
                            # column(6, box(title = "Résumé de l'ACP", status = "primary", solidHeader = TRUE, width = 12, verbatimTextOutput("acp_results_text"))),
                            #column(6, box(title = "BiPlot", status = "primary", solidHeader = TRUE, width = 12, plotOutput("biplot"))),
                            column(12,box(title='Data', status = "primary", solidHeader = TRUE, width = 12,dataTableOutput("clustered_table")))
@@ -305,7 +305,7 @@ ui <- shinyUI(dashboardPage(
       # Onglet Étude Technique
       tabItem(tabName = "Etude_technique",
               tabsetPanel(
-                tabPanel("Contributions des variables",
+                tabPanel("Contributions des caractéristiques",
                          fluidRow(
                            box(title = "Axe 1", status = "primary", solidHeader = TRUE, width = 12,
                                plotOutput("contrib_PC1"))
@@ -315,7 +315,7 @@ ui <- shinyUI(dashboardPage(
                                plotOutput("contrib_PC2"))     
                          )
                 ),
-                tabPanel("Qualité de la représentation des variables (cos²)",
+                tabPanel("Qualité de la représentation des caractéristiques (cos²)",
                          fluidRow(
                            box(title = "Axe 1", status = "primary", solidHeader = TRUE, width = 12,
                                plotOutput("cos2_PC1"))
@@ -332,12 +332,12 @@ ui <- shinyUI(dashboardPage(
       tabItem(tabName = "correlation",
               fluidRow(
                 box(
-                  title = "Sélectionnez les variables", status = "primary", solidHeader = TRUE, width = 12,
-                  selectInput("corr_vars", "Sélectionnez les variables :", 
+                  title = "Sélectionnez les caractéristiques", status = "primary", solidHeader = TRUE, width = 12,
+                  selectInput("corr_vars", "Sélectionnez les caractéristiques :", 
                               choices = quant_vars, 
                               selected = quant_vars[1:2], 
                               multiple = TRUE),
-                  actionButton("select_all_corr", "Sélectionner toutes les variables", class = "btn-info")
+                  actionButton("select_all_corr", "Sélectionner toutes les caractéristiques", class = "btn-info")
                 ),
                 box(title = "Options de personnalisation", status = "primary", solidHeader = TRUE, width = 12,
                     checkboxInput("customize_corr", label=tags$span(style = "color: black;", "Personnaliser l'apparence"), value = FALSE),
@@ -347,7 +347,7 @@ ui <- shinyUI(dashboardPage(
                                   choices = c("circle", "square", "color", "number"), selected = "circle"),
                       selectInput("corr_type", label=tags$span(style = "color: black;", "Type de matrice"), 
                                   choices = c("full", "upper", "lower"), selected = "full"),
-                      selectInput("corr_order", label=tags$span(style = "color: black;", "Ordre des variables"), 
+                      selectInput("corr_order", label=tags$span(style = "color: black;", "Ordre des caractéristiques"), 
                                   choices = c("original", "alphabet", "hclust"), selected = "original")
                     )
                 ),
