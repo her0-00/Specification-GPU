@@ -557,7 +557,7 @@ server <- function(input, output, session) {
   filtered_evolution_data <- reactive({
     req(input$selected_brand2, input$year_range)
     filtered_data() %>%
-      filter(manufacturer == input$selected_brand & releaseYear >= input$year_range[1] & releaseYear <= input$year_range[2])
+      filter(manufacturer == input$selected_brand2)
   })
   
   generate_evolution_plot <- function(data, characteristic, brand) {
@@ -567,6 +567,18 @@ server <- function(input, output, session) {
       summarise(max_value = max(!!sym(characteristic), na.rm = TRUE))
     
   
+    output$brand_logo <- renderUI({
+      if (input$selected_brand == "NVIDIA") {
+        img(src = "NVLogo_2D_H.jpg", height = "70px", width = "300px")
+      } else if (input$selected_brand == "AMD") {
+        img(src = "AMD.png", height = "90px", width = "300px")
+      } else if (input$selected_brand == "Intel") {
+        img(src = "Intel.png", height = "90px", width = "300px")
+      } else {
+        # Par défaut, afficher une image ou rien
+        NULL
+      }
+    })
   # Tracer le graphique avec les valeurs maximales par année
   ggplot(data_max_by_year, aes(x = releaseYear, y = max_value)) +
     geom_line() +
