@@ -20,27 +20,27 @@ server <- function(input, output, session) {
   })
   
   observe({
-  df_data <- filtered_data()
-  print(length(df_data))
-  
-  # Variables quantitatives (numériques)
-  quant_vars <- names(df_data)[sapply(df_data, is.numeric)][2:8]
-  
-  # Variables qualitatives (facteurs ou catégoriques)
-  qual_vars <- names(df_data)[sapply(df_data, is.factor)]
-  
-  # Variables actives pour l'ACP (quantitatives uniquement)
-  quant_vars_actives <- quant_vars  # Modifiez ici si vous voulez limiter les variables spécifiques à l'ACP.
-  
-  # Variables catégorielles pour l'ACP
-  cat_vars <- qual_vars 
-  
-  updateSelectInput(session, "var_quanti", choices = quant_vars)
-  updateSelectInput(session, "var_quali", choices = qual_vars)
-  updateSelectInput(session, "acp_vars", choices = quant_vars)
-  updateSelectInput(session, "acp_cat_vars", choices = qual_vars)
-  
-})
+    df_data <- filtered_data()
+    print(length(df_data))
+    
+    # Variables quantitatives (numériques)
+    quant_vars <- names(df_data)[sapply(df_data, is.numeric)][2:8]
+    
+    # Variables qualitatives (facteurs ou catégoriques)
+    qual_vars <- names(df_data)[sapply(df_data, is.factor)]
+    
+    # Variables actives pour l'ACP (quantitatives uniquement)
+    quant_vars_actives <- quant_vars  # Modifiez ici si vous voulez limiter les variables spécifiques à l'ACP.
+    
+    # Variables catégorielles pour l'ACP
+    cat_vars <- qual_vars 
+    
+    updateSelectInput(session, "var_quanti", choices = quant_vars)
+    updateSelectInput(session, "var_quali", choices = qual_vars)
+    updateSelectInput(session, "acp_vars", choices = quant_vars)
+    updateSelectInput(session, "acp_cat_vars", choices = qual_vars)
+    
+  })
   
   # Création des listes pour les variables quantitatives et qualitatives en utilisant les données filtrées
   
@@ -228,7 +228,7 @@ server <- function(input, output, session) {
       distinct_points <- nrow(unique(df_ACP_1))
       print("Number of Distinct Points:")
       print(distinct_points)  # Print number of distinct points
-   
+      
       
       # Perform clustering with the optimal number of clusters
       cl2 <- kmeans(x = df_ACP_1, centers = 5, nstart = 100)
@@ -316,13 +316,13 @@ server <- function(input, output, session) {
   })
   
   output$gpu_clock_mean <- renderValueBox({
-  valueBox(
-    value = filtered_acp_data_summarise[filtered_acp_data_summarise$Profil_recommande == input$profil_gpu, ]$`Moyenne GPU Clock (MHz)`,
-    subtitle = "Moyenne GPU Clock (MHz)",
-    icon = icon("tachometer-alt"),
-    color = "green"
-  )
-})
+    valueBox(
+      value = filtered_acp_data_summarise[filtered_acp_data_summarise$Profil_recommande == input$profil_gpu, ]$`Moyenne GPU Clock (MHz)`,
+      subtitle = "Moyenne GPU Clock (MHz)",
+      icon = icon("tachometer-alt"),
+      color = "green"
+    )
+  })
   
   output$mem_bus_width_mean <- renderValueBox({
     valueBox(
@@ -555,7 +555,7 @@ server <- function(input, output, session) {
   
   # Filter data based on selected brand and year range
   filtered_evolution_data <- reactive({
-    req(input$selected_brand2, input$year_range)
+    req(input$selected_brand2)
     filtered_data() %>%
       filter(manufacturer == input$selected_brand2)
   })
@@ -566,36 +566,24 @@ server <- function(input, output, session) {
       group_by(releaseYear) %>%
       summarise(max_value = max(!!sym(characteristic), na.rm = TRUE))
     
+    
+    # Tracer le graphique avec les valeurs maximales par année
+    ggplot(data_max_by_year, aes(x = releaseYear, y = max_value)) +
+      geom_line() +
+      labs(title = paste("Évolution de", characteristic, "pour", brand),
+           x = "Année de sortie",
+           y = paste("Valeur maximale de", characteristic)) +
+      theme_minimal() +
+      scale_x_continuous(breaks = seq(min(data_max_by_year$releaseYear), max(data_max_by_year$releaseYear), by = 1)) +
+      scale_y_continuous(breaks = seq(0, max(data_max_by_year$max_value, na.rm = TRUE), by = 20))
+  }
   
-    output$brand_logo <- renderUI({
-      if (input$selected_brand == "NVIDIA") {
-        img(src = "NVLogo_2D_H.jpg", height = "70px", width = "300px")
-      } else if (input$selected_brand == "AMD") {
-        img(src = "AMD.png", height = "90px", width = "300px")
-      } else if (input$selected_brand == "Intel") {
-        img(src = "Intel.png", height = "90px", width = "300px")
-      } else {
-        # Par défaut, afficher une image ou rien
-        NULL
-      }
-    })
-  # Tracer le graphique avec les valeurs maximales par année
-  ggplot(data_max_by_year, aes(x = releaseYear, y = max_value)) +
-    geom_line() +
-    labs(title = paste("Évolution de", characteristic, "pour", brand),
-         x = "Année de sortie",
-         y = paste("Valeur maximale de", characteristic)) +
-    theme_minimal() +
-    scale_x_continuous(breaks = seq(min(data_max_by_year$releaseYear), max(data_max_by_year$releaseYear), by = 1)) +
-    scale_y_continuous(breaks = seq(0, max(data_max_by_year$max_value, na.rm = TRUE), by = 20))
-}
-
   
   # Generate the evolution plot for memClock
   output$evolution_plot_memClock <- renderPlotly({
     req(filtered_evolution_data())
     data <- filtered_evolution_data()
-    p <- generate_evolution_plot(data, "memClock", input$selected_brand)
+    p <- generate_evolution_plot(data, "memClock", input$selected_brand2)
     ggplotly(p)
   })
   
@@ -646,6 +634,19 @@ server <- function(input, output, session) {
     p <- generate_evolution_plot(data, "gpuClock", input$selected_brand2)
     ggplotly(p)
     
+  })
+  
+  output$brand_logo <- renderUI({
+    if (input$selected_brand2 == "NVIDIA") {
+      img(src = "NVLogo_2D_H.jpg", height = "70px", width = "300px")
+    } else if (input$selected_brand2 == "AMD") {
+      img(src = "AMD.png", height = "90px", width = "300px")
+    } else if (input$selected_brand2 == "Intel") {
+      img(src = "Intel.png", height = "90px", width = "300px")
+    } else {
+      # Par défaut, afficher une image ou rien
+      NULL
+    }
   })
   
 }
