@@ -49,10 +49,10 @@ marq_ <- unique(df$manufacturer)  # Définition de marq_
 theme_set(theme_minimal())  # Définit un thème global pour les graphiques
 
 
-  
 
-  
- 
+
+
+
 
 # Fonction pour calculer la matrice de variances-covariances
 get_S <- function(data) {
@@ -164,84 +164,83 @@ filtered_acp_data_ <- df %>%
 
 
 
-  
-  c <- doitPerformACP(filtered_acp_data_, quant_vars)
-  print("ACP Result:")
-  print(c)  # Affiche le résultat de l'ACP
-  
-  # Extraire les valeurs cos2
-  cos2_values <- c$ind$cos2
-  print("Cos2 Values:")
-  print(cos2_values)  # Affiche les valeurs cos2
-  
-  # Sélectionner les meilleurs individus basés sur la somme des cos2
-  total_cos2 <- rowSums(cos2_values[, 1:2])
-  top_individuals <- order(total_cos2, decreasing = TRUE)[1:50]
-  print("Top Individuals:")
-  print(top_individuals)  # Affiche les meilleurs individus
-  
-  # Filtrer les données des meilleurs individus
-  filtered_acp_data_ <- filtered_acp_data_[top_individuals, , drop = FALSE]
-  print("Filtered ACP Data:")
-  print(filtered_acp_data_)  # Affiche les données filtrées pour l'ACP
-  
-  # Sélectionner les colonnes selon les variables de l'ACP
-  selected_columns <- quant_vars
-  print("Selected Columns:")
-  print(selected_columns)  # Affiche les colonnes sélectionnées
-  
-  # Appliquer la mise à l'échelle des données pour l'ACP
-  df_ACP_1 <- filtered_acp_data_[, selected_columns, drop = FALSE] %>%scale(center = TRUE, scale = TRUE)
-  print("Scaled ACP Data (df_ACP_1):")
-  print(df_ACP_1)  # Affiche les données mises à l'échelle pour l'ACP
-  
-  # Nombre de points distincts dans les données
-  distinct_points <- nrow(unique(df_ACP_1))
-  print("Number of Distinct Points:")
-  print(distinct_points)  # Affiche le nombre de points distincts
-  
 
-  # Effectuer le clustering avec le nombre optimal de clusters
-  cl2 <- kmeans(x = df_ACP_1, centers = 5, nstart = 100)
-  print("Clustering Result (cl2):")
-  print(cl2)  # Affiche les résultats du clustering
-  
-  # Ajouter les clusters aux données filtrées
-  filtered_acp_data_$Cluster <- cl2$cluster
-  
-  # Affichage des moyennes techniques 
-  cluster_summary <- filtered_acp_data_ %>%
-    group_by(Cluster) %>%
-    summarise(
-      `Moyenne VRAM (Go)` = round(mean(memSize, na.rm = TRUE), 1),
-      `Moyenne GPU Clock (MHz)` = round(mean(gpuClock, na.rm = TRUE), 0),
-      `Moyenne memBusWidth (bits)` = round(mean(memBusWidth, na.rm = TRUE), 0),
-      `Moyenne unifiedShader` = round(mean(unifiedShader, na.rm = TRUE), 0),
-      `Moyenne memClock (MHz)` = round(mean(memClock, na.rm = TRUE), 0),
-      `Moyenne année de sortie` = round(mean(releaseYear, na.rm = TRUE), 0),
-      `Cartes dans ce cluster` = n()
-    )
-  
-  dev_ia_cluster <- cluster_summary %>% filter(`Moyenne unifiedShader` == max(`Moyenne unifiedShader`)) %>% pull(Cluster)
-  console_jeux_cluster <- cluster_summary %>% filter(`Moyenne memBusWidth (bits)` == min(`Moyenne memBusWidth (bits)`)) %>% pull(Cluster)
-  usage_general_cluster <- cluster_summary %>% filter(`Moyenne GPU Clock (MHz)` == max(`Moyenne GPU Clock (MHz)`)) %>% pull(Cluster)
-  data_center_cluster <- cluster_summary %>% filter(`Moyenne VRAM (Go)` == max(`Moyenne VRAM (Go)`)) %>% pull(Cluster)
-  
-  cluster_summary <- cluster_summary %>%
-    mutate(`Profil_recommande` = case_when(
-      Cluster == dev_ia_cluster ~ "Dev IA Grand Public",
-      Cluster == console_jeux_cluster ~ "Console de jeux",
-      Cluster == usage_general_cluster ~ "Performances Modérées pour Usage Général",
-      Cluster == data_center_cluster ~ "Calcul Intensif et Data Center",
-      TRUE ~ "Haut de Gamme pour Professionnels et Gaming"
-    ))
-  filtered_acp_data_=  filtered_acp_data_%>%
-    mutate(`Profil_recommande` = case_when(
-      Cluster == dev_ia_cluster ~ "Dev IA Grand Public",
-      Cluster == console_jeux_cluster ~ "Console de jeux",
-      Cluster == usage_general_cluster ~ "Performances Modérées pour Usage Général",
-      Cluster == data_center_cluster ~ "Calcul Intensif et Data Center",
-      TRUE ~ "Haut de Gamme pour Professionnels et Gaming"
-    ))
-  filtered_acp_data_summarise<- cluster_summary
-  
+c <- doitPerformACP(filtered_acp_data_, quant_vars)
+print("ACP Result:")
+print(c)  # Affiche le résultat de l'ACP
+
+# Extraire les valeurs cos2
+cos2_values <- c$ind$cos2
+print("Cos2 Values:")
+print(cos2_values)  # Affiche les valeurs cos2
+
+# Sélectionner les meilleurs individus basés sur la somme des cos2
+total_cos2 <- rowSums(cos2_values[, 1:2])
+top_individuals <- order(total_cos2, decreasing = TRUE)[1:50]
+print("Top Individuals:")
+print(top_individuals)  # Affiche les meilleurs individus
+
+# Filtrer les données des meilleurs individus
+filtered_acp_data_ <- filtered_acp_data_[top_individuals, , drop = FALSE]
+print("Filtered ACP Data:")
+print(filtered_acp_data_)  # Affiche les données filtrées pour l'ACP
+
+# Sélectionner les colonnes selon les variables de l'ACP
+selected_columns <- quant_vars
+print("Selected Columns:")
+print(selected_columns)  # Affiche les colonnes sélectionnées
+
+# Appliquer la mise à l'échelle des données pour l'ACP
+df_ACP_1 <- filtered_acp_data_[, selected_columns, drop = FALSE] %>%scale(center = TRUE, scale = TRUE)
+print("Scaled ACP Data (df_ACP_1):")
+print(df_ACP_1)  # Affiche les données mises à l'échelle pour l'ACP
+
+# Nombre de points distincts dans les données
+distinct_points <- nrow(unique(df_ACP_1))
+print("Number of Distinct Points:")
+print(distinct_points)  # Affiche le nombre de points distincts
+
+
+# Effectuer le clustering avec le nombre optimal de clusters
+cl2 <- kmeans(x = df_ACP_1, centers = 5, nstart = 100)
+print("Clustering Result (cl2):")
+print(cl2)  # Affiche les résultats du clustering
+
+# Ajouter les clusters aux données filtrées
+filtered_acp_data_$Cluster <- cl2$cluster
+
+# Affichage des moyennes techniques 
+cluster_summary <- filtered_acp_data_ %>%
+  group_by(Cluster) %>%
+  summarise(
+    `Moyenne VRAM (Go)` = round(mean(memSize, na.rm = TRUE), 1),
+    `Moyenne GPU Clock (MHz)` = round(mean(gpuClock, na.rm = TRUE), 0),
+    `Moyenne memBusWidth (bits)` = round(mean(memBusWidth, na.rm = TRUE), 0),
+    `Moyenne unifiedShader` = round(mean(unifiedShader, na.rm = TRUE), 0),
+    `Moyenne memClock (MHz)` = round(mean(memClock, na.rm = TRUE), 0),
+    `Moyenne année de sortie` = round(mean(releaseYear, na.rm = TRUE), 0),
+    `Cartes dans ce cluster` = n()
+  )
+
+dev_ia_cluster <- cluster_summary %>% filter(`Moyenne unifiedShader` == max(`Moyenne unifiedShader`)) %>% pull(Cluster)
+console_jeux_cluster <- cluster_summary %>% filter(`Moyenne memBusWidth (bits)` == min(`Moyenne memBusWidth (bits)`)) %>% pull(Cluster)
+usage_general_cluster <- cluster_summary %>% filter(`Moyenne GPU Clock (MHz)` == max(`Moyenne GPU Clock (MHz)`)) %>% pull(Cluster)
+data_center_cluster <- cluster_summary %>% filter(`Moyenne VRAM (Go)` == max(`Moyenne VRAM (Go)`)) %>% pull(Cluster)
+
+cluster_summary <- cluster_summary %>%
+  mutate(`Profil_recommande` = case_when(
+    Cluster == dev_ia_cluster ~ "Dev IA Grand Public",
+    Cluster == console_jeux_cluster ~ "Console de jeux",
+    Cluster == usage_general_cluster ~ "Performances Modérées pour Usage Général",
+    Cluster == data_center_cluster ~ "Calcul Intensif et Data Center",
+    TRUE ~ "Haut de Gamme pour Professionnels et Gaming"
+  ))
+filtered_acp_data_=  filtered_acp_data_%>%
+  mutate(`Profil_recommande` = case_when(
+    Cluster == dev_ia_cluster ~ "Dev IA Grand Public",
+    Cluster == console_jeux_cluster ~ "Console de jeux",
+    Cluster == usage_general_cluster ~ "Performances Modérées pour Usage Général",
+    Cluster == data_center_cluster ~ "Calcul Intensif et Data Center",
+    TRUE ~ "Haut de Gamme pour Professionnels et Gaming"
+  ))
+filtered_acp_data_summarise<- cluster_summary
