@@ -1,406 +1,370 @@
-import streamlit as st
-import requests
-import pandas as pd
+import ast
+import base64
+import json
+from io import BytesIO
+from typing import Any, Dict
+
 import numpy as np
-import plotly.express as px
-import re
-import seaborn as sns
-import matplotlib.pyplot as plt
-
-
-API_URL = "http://127.0.0.1:8000"
-
-st.title("Apprentissaga automatique + prevision ( E-prod -CasQ'it)")
-
-# --- Choix de la source
-
-def convert_dataframe_types(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-
-    # Convertir les colonnes numériques (même si elles sont au format string)
-    for col in df.columns:
-        try:
-            df[col] = pd.to_numeric(df[col])
-        except (ValueError, TypeError):
-            pass  # Ignore si la conversion échoue
-
-    
-    return df
-source = st.radio("Source de données", ["csv", "db"])
-filename, table_name, username, password = None, None, None, None
-df = None
-
-if source == "csv":
-    uploaded_file = st.file_uploader("Uploader un fichier CSV", type=["csv"])
-    if uploaded_file is not None:
-        files = {"file": (uploaded_file.name, uploaded_file.getvalue())}
-        resp = requests.post(f"{API_URL}/upload_csv/", files=files)
-        if resp.ok:
-            filename = resp.json()["filename"]
-            st.success(f"Fichier {filename} uploadé !")
-            data_resp = requests.get(f"{API_URL}/get_csv_data/", params={"filename": filename})
-            if data_resp.ok:
-                data_json = data_resp.json()
-                df = convert_dataframe_types(pd.DataFrame(data_json["data"], columns=data_json["columns"]))
-          
-
-                # Remplacer les None explicites par NaN (au cas où)
-                df = df.where(pd.notnull(df), None)
-
-                # Calcul du seuil : au moins 50 % de valeurs non manquantes
-                seuil = len(df) * 0.5
-
-                # Supprimer les colonnes avec plus de 50 % de valeurs manquantes
-                df = df.dropna(axis=1, thresh=seuil)
-
-
-
-
-                
-            st.dataframe(df)
-        else:
-                st.error("Erreur de lecture des données")
-    else:
-            st.error("Erreur upload")
-
-elif source == "db":
-    st.header("Connexion à la base PostgreSQL")
-    username = st.text_input("Nom d'utilisateur DB")
-    password = st.text_input("Mot de passe DB", type="password")
-    if username and password:
-        if st.button("Lister les tables"):
-            req = {"username": username, "password": password, "query": ""}
-            tables = requests.post(f"{API_URL}/db/list_tables/", json=req).json()
-            st.session_state["db_tables"] = tables
-        tables = st.session_state.get("db_tables", [])
-        table_name = st.selectbox("Table", tables) if tables else None
-        if table_name:
-            sql = f"SELECT * FROM {table_name} limit 10"
-            req = {"username": username, "password": password, "query": sql}
-            data_resp = requests.post(f"{API_URL}/db/query/", json=req)
-            if data_resp.ok:
-                data_json = data_resp.json()
-                df = convert_dataframe_types(pd.DataFrame(data_json["data"], columns=data_json["columns"]))
-                 # Remplacer les None explicites par NaN (au cas où)
-                df = df.where(pd.notnull(df), None)
-
-                # Calcul du seuil : au moins 50 % de valeurs non manquantes
-                seuil = len(df) * 0.5
-
-                # Supprimer les colonnes avec plus de 50 % de valeurs manquantes
-                df = df.dropna(axis=1, thresh=seuil)
-                st.dataframe(df)
-
-            else:
-                st.error("Erreur de lecture des données")
-if df is not None :
-   
-    df_clean = df.copy()
-    df_clean = df_clean.replace([float('inf'), float('-inf')], pd.NA)
-    df_clean = df_clean.dropna()
-
-
-
-# --- Analyses si DataFrame chargé
-if df_clean is not None:
-    # Statistiques
-    with st.expander("Statistiques descriptives"):
-        req = {
-            "data": df_clean.to_numpy().tolist(),
-            "columns": list(df_clean.columns)
-        }
-        desc = requests.post(f"{API_URL}/stats/describe/", json=req).json()
-        st.write(pd.DataFrame(desc))
-
-    with st.expander("Skewness & Kurtosis"):
-        req = {
-            "data": df_clean.to_numpy().tolist(),
-            "columns": list(df_clean.columns)
-        }
-        response = requests.post(f"{API_URL}/stats/skew_kurtosis/", json=req)
-
-        if response.ok:
-            skew_kurt = response.json()
-            st.json(skew_kurt)
-        else:
-            st.error(f"❌ Erreur API : {response.status_code} - {response.text}")
-
-        
-
-    # Outliers
-    with st.expander("Détection d'outliers"):
-        method = st.selectbox("Méthode", ["zscore", "iqr"])
-        threshold = st.slider("Seuil (z-score)", 2.0, 5.0, 3.0)
-        req = {
-            "data": df_clean.to_numpy().tolist(),
-            "columns": list(df_clean.columns)
-        }
-        outliers = requests.post(
-            f"{API_URL}/stats/outliers/",
-            json=req,
-            params={"method": method, "threshold": threshold}
-        ).json()
-        st.write(outliers)
-
-    # Visualisation
-
-st.header("Visualisation")
-
-
-
-if df is not None:
-    num_cols = df.select_dtypes(include=np.number).columns.tolist()
-    req = {
-        "data": df_clean.to_numpy().tolist(),
-        "columns": list(df_clean.columns)
-    }
-   
-    # Exemple : sélection de la colonne à visualiser
-    col_name = st.selectbox("📌 Sélectionnez une colonne à visualiser", df_clean.columns)
-
-
-    # Appel à l'API
-    response = requests.post(
-        f"{API_URL}/visualization/histogram/",
-        json=req,
-        params={"col_name": col_name}
-    )
-
-    # Affichage du graphique
-    if response.ok:
-        hist_response = response.json()
-
-        if pd.api.types.is_numeric_dtype(df_clean[col_name]):
-            # Histogramme pour données quantitatives
-            hist_df = pd.DataFrame({
-                "count": hist_response["hist"],
-                "bin_start": hist_response["bin_edges"][:-1],
-                "bin_end": hist_response["bin_edges"][1:]
-            })
-            st.subheader("📊 Histogramme")
-            st.plotly_chart(
-                px.bar(hist_df, x="bin_start", y="count", labels={"bin_start": col_name}),
-                use_container_width=True
-            )
-        else:
-            # Diagramme en barres pour données qualitatives
-            hist_df = pd.DataFrame({
-                "modalities": hist_response["modalities"],
-                "frequencies": hist_response["frequencies"]
-            })
-            st.subheader("📊 Diagramme en barres")
-            st.plotly_chart(
-                px.bar(hist_df, x="modalities", y="frequencies", labels={"modalities": col_name}),
-                use_container_width=True
-            )
-    else:
-        st.error(f"❌ Erreur lors de la récupération des données : {response.text}")
-
-        # Boxplot
-        col_num = st.selectbox("Colonne numérique", num_cols, key="hist_box_col")
-        box_response = requests.post(
-            f"{API_URL}/visualization/boxplot/", json=req,
-            params={"col_nums": col_num}
-        ).json()
-        box_df = pd.DataFrame({
-            "stat": ["min", "q1", "median", "q3", "max"],
-            "value": [box_response["min"], box_response["q1"], box_response["median"], box_response["q3"], box_response["max"]]
-        })
-        st.subheader("Boxplot")
-        st.plotly_chart(px.box(df, y=col_num), use_container_width=True)
-
-    # Scatter plot
-    st.subheader("Nuage de points")
-    col_x = st.selectbox("Axe X", num_cols, key="scatter_x")
-    col_y = st.selectbox("Axe Y", num_cols, key="scatter_y")
-    if col_x and col_y:
-        scatter_response = requests.post(
-            f"{API_URL}/visualization/scatter/", json=req,
-            params={"x": col_x, "y": col_y}
-        ).json()
-        scatter_df = pd.DataFrame({
-            col_x: scatter_response["x"],
-            col_y: scatter_response["y"]
-        })
-        st.plotly_chart(px.scatter(scatter_df, x=col_x, y=col_y), use_container_width=True)
-
-#--ML--
-
-
-
-    st.header("🧠 Machine Learning non supervisé")
-
-
-
-    st.subheader("⚙️ Entraînement d’un modèle")
-
-    features = st.multiselect("🔢 Variables explicatives (features)", list(df_clean.columns), key="train_features")
-    target = st.selectbox("🎯 Variable cible", list(df_clean.columns), key="train_target")
-    # Remplacer les valeurs nulles dans la colonne cible par "Non renseigné"
-    df_clean[target] = df_clean[target].fillna("Non renseigné")
-    df_clean[target].where(pd.notnull(df_clean[target]), None)
-    df_clean[target] = df_clean[target].fillna("Non renseigné")
-    def normaliser_statut(texte):
-        if pd.isnull(texte):
-            return texte
-        # Remplacer les variantes de "accepté"
-        texte = re.sub(r"\b(accepte[eé]?|accepté[e]?|accepte|accepteé|accepteee|accepteé|acepte|acpté)\b", "Acceptée", str(texte), flags=re.IGNORECASE)
-        # Remplacer les variantes de "refusé"
-        texte = re.sub(r"\b(refuse[eé]?|refusé[e]?|refuse|refusee|refuseé|refus)\b", "Refusée", str(texte), flags=re.IGNORECASE)
-        return texte
-
-
-    df_clean[target]  = df_clean[target].apply(normaliser_statut)
-
-    model_type = st.selectbox("🧪 Modèle", [
-        "RandomForest", "LogisticRegression", "SVM", "GradientBoosting", "MLP"
-    ], key="train_model")
-
-    if st.button("🚀 Entraîner le modèle") and features and target:
-        df_ss = df_clean[features + [target]]  # Sous-ensemble des colonnes sélectionnées
-        
-        st.write(f"📉 Nombre de lignes après nettoyage : {len(df_ss)}")
-
-        if df_ss.empty:
-            st.warning("⚠️ Aucune donnée disponible après nettoyage. Veuillez vérifier les valeurs manquantes ou infinies dans votre fichier.")
-        else:
-
-            req = {
-                "data": df_ss.to_numpy().tolist(),
-                "columns": list(df_ss.columns),
-                "target_column": target,
-                "model_type": model_type,
-                "test_size": 0.2,
-                "random_state": 42,
-                "selected_features": features,
-                "session_id": "session1"
-            }
-
-            with st.spinner("Entraînement en cours..."):
-                ml_resp = requests.post(f"{API_URL}/ml/train/", json=req)
-
-            if ml_resp.ok:
-                ml_res = ml_resp.json()
-                st.success("✅ Modèle entraîné avec succès !")
-                st.write("🎯 **Accuracy** :", ml_res["accuracy"])
-                st.text("📊 Rapport de classification :")
-                st.code(ml_res["report"])
-                # Conversion en matrice numpy
-                confusion_matrix = np.array([
-                    [ ml_res["confusion_matrix"][0][0],  ml_res["confusion_matrix"][0][1],  ml_res["confusion_matrix"][0][2]],
-                    [ ml_res["confusion_matrix"][1][0],  ml_res["confusion_matrix"][1][1],  ml_res["confusion_matrix"][1][2]],
-                    [ ml_res["confusion_matrix"][2][0],  ml_res["confusion_matrix"][2][1],  ml_res["confusion_matrix"][2][2]]
-                ])
-
-                # Étiquettes des classes
-                class_labels = ["Classe 0", "Classe 1", "Classe 2"]
-
-                # Affichage de la heatmap
-                fig, ax = plt.subplots()
-                sns.heatmap(confusion_matrix, annot=True, fmt="d", cmap="Blues", xticklabels=class_labels, yticklabels=class_labels, ax=ax)
-                ax.set_xlabel("Prédit")
-                ax.set_ylabel("Réel")
-                ax.set_title("🧩 Matrice de confusion")
-
-                st.pyplot(fig)
-
-                st.session_state["model_path"] = ml_res["model_path"]
-            else:
-                st.error(f"❌ Erreur dans l'entraînement : {ml_resp.text}")
-
-
-
-
-    st.subheader("📊 Comparaison de plusieurs modèles")
-
-    compare_features = st.multiselect("Variables explicatives (features)", list(df_clean.columns), key="compare_features")
-    compare_target = st.selectbox("Variable cible", list(df_clean.columns), key="compare_target")
-    model_types = st.multiselect("Modèles à comparer", [
-        "RandomForest", "LogisticRegression", "SVM", "GradientBoosting", "MLP"
-    ], default=["RandomForest", "LogisticRegression"], key="compare_models")
-
-    if st.button("Comparer les modèles") and compare_features and compare_target and model_types:
-        req = {
-            "data": df_clean.to_numpy().tolist(),
-            "columns": list(df_clean.columns),
-            "target_column": compare_target,
-            "test_size": 0.2,
-            "random_state": 42,
-            "session_id": "session1",
-            "selected_features": compare_features,
-            "model_types": model_types
-        }
-
-        compare_resp = requests.post(f"{API_URL}/ml/compare/", json=req)
-        if compare_resp.ok:
-            results = compare_resp.json()
-            for model_name, metrics in results.items():
-                st.subheader(f"🧠 Résultats pour {model_name}")
-                if "error" in metrics:
-                    st.error(f"Erreur : {metrics['error']}")
-                else:
-                    st.write("🎯 Accuracy :", metrics["accuracy"])
-                    st.text("📊 Rapport de classification :")
-                    st.code(metrics["report"])
-                    st.write("🧩 Matrice de confusion :", metrics["confusion_matrix"])
-        else:
-            st.error(f"❌ Erreur lors de la comparaison : {compare_resp.text}")
-
-    st.subheader("🔮 Prédiction sur les 5 premières lignes")
-
-    if  features is not None :#"model_path" in st.session_state and features:
-        if st.button("Prediction"):
-            pred_data = df_clean[features].head(5).values.tolist()
-            pred_req = {
-                "data": pred_data,
-                "columns": features,
-                "session_id": "session1"
-            } 
-            pred_resp = requests.post(f"{API_URL}/ml/predict/", json=pred_req)
-            if pred_resp.ok:
-                st.write("📈 Prédictions :", pred_resp.json()["predictions"])
-            else:
-                st.error(f"❌ Erreur lors de la prédiction : {pred_resp.text}")
-
-
-        # Clustering
-
-
-    st.header("🔍 Clustering non supervisé (KMeans)")
-
-    if df is not None:
-        numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
-        features = st.multiselect("Sélectionnez les variables numériques à utiliser", numeric_cols)
-        n_clusters = st.slider("Nombre de clusters", min_value=2, max_value=10, value=3)
-
-        if st.button("Lancer le clustering") and features:
-            params = {
-                "source": "local",
-                "features": features,
-                "n_clusters": n_clusters
-            }
-
+import pandas as pd
+import streamlit as st
+from PIL import Image
+from st_aggrid import (
+    AgGrid,  # type: ignore
+    DataReturnMode,
+    GridOptionsBuilder,
+    GridUpdateMode 
+)
+
+
+
+
+
+
+
+def create_and_display_grid(
+    context_data: str,
+    key_suffix: str,
+    min_height: int = 400,
+    max_height: int = 400,
+    page_size: int = 20,
+    content_col_name: str = "Content",
+    font_size: int = 9,
+) -> Dict[str, Any]:
+    """
+    Creates and displays an AgGrid with the given data and a single CSV export button.
+    Handles text content properly for CSV export. Uses Streamlit expanders.
+    for displaying table_dict and image_array data.
+
+    Args:
+        context_data: String representation of a dictionary (or a dictionary) to be converted to DataFrame.
+        key_suffix: Suffix for the unique key to identify this grid.
+        min_height: Minimum height of the grid in pixels.
+        max_height: Maximum height of the grid in pixels.
+        page_size: Number of rows per page.
+        content_col_name: Name of the content column to make wider.
+        font_size: Size of the text in the table cells (in pixels).
+
+    Returns:
+        The response from AgGrid which contains filtered and sorted data, or an empty dict if no valid data.
+    """
+    # Check if context_data is empty or represents a null value.
+    if not context_data or (
+        isinstance(context_data, str)  # type: ignore
+        and context_data.strip().lower() in ["", "null", "none"]
+    ):
+        st.markdown("No data to display.")
+        return {}
+
+    # Evaluate context_data if it's a string
+    try:
+        if isinstance(context_data, str):  # type: ignore
+            # Try json.loads first, with proper quote handling
             try:
-                response = requests.post(f"{API_URL}/clustering/kmeans/", params=params)
-                if response.ok:
-                    result = response.json()
-                    df["cluster"] = result["clusters"]
-                    st.success("✅ Clustering effectué avec succès !")
-                    st.write("📍 Centres des clusters :", result["centers"])
+                cleaned_data = context_data.replace("'", '"')
+                data = json.loads(cleaned_data)
+            except json.JSONDecodeError:
+                # Fall back to ast.literal_eval
+                data = ast.literal_eval(context_data)
+        else:
+            data = context_data
+    except Exception as e:
+        st.error(f"Error evaluating context_data: {e}")
+        st.error(
+            f"Raw data: {context_data[:200]}..."
+            if isinstance(context_data, str)  # type: ignore
+            else "Non-string data"
+        )
+        return {}
 
-                    if len(features) == 2:
-                        fig = px.scatter(
-                            df,
-                            x=features[0],
-                            y=features[1],
-                            color=df["cluster"].astype(str),
-                            title="Visualisation des clusters",
-                            labels={"color": "Cluster"}
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.info("Sélectionnez exactement 2 variables pour afficher un graphique de dispersion.")
+    # Create DataFrame from data dictionary
+    try:
+        df = pd.DataFrame.from_dict(data)  # type: ignore
+    except Exception as e:
+        st.error(f"Error creating DataFrame: {e}")
+        st.json(data)  # Display the data structure for debugging
+        return {}
+
+    # Process metadata columns: track table_dict and image_array
+    has_table_dict = "table_dict" in df.columns
+    has_image_array = "image_array" in df.columns
+
+    # Add row index for tracking selected rows
+    df["_row_index"] = range(len(df))
+
+    # Create the main display container
+    grid_container = st.container()
+
+    with grid_container:
+        # Create separate columns for the grid and metadata display
+        grid_col, details_col = st.columns([40, 1])
+
+        with grid_col:
+            # Configure dynamic height based on data size
+            row_count = len(df)
+            estimated_height = min(max(row_count * 60 + 100, min_height), max_height)
+            if row_count > page_size:
+                visible_rows = min(page_size, row_count)
+                estimated_height = min(visible_rows * 60 + 100, max_height)
+
+            # Configure AgGrid
+            gb = GridOptionsBuilder.from_dataframe(df)  # type: ignore
+                       
+               
+            # Fonction pour créer une barre de progression en texte
+            def render_bar(val, length=10):
+                filled = int(val * length)
+                empty = length - filled
+                return "█" * filled + "░" * empty
+
+
+            # Ajouter une colonne avec la barre de progression
+            df['Similarité'] = df['relevance_score'].apply(lambda x: render_bar(x))
+
+
+
+
+            gb.configure_pagination(  # type: ignore
+                paginationAutoPageSize=False, paginationPageSize=page_size
+            )
+
+            # Define cell style
+            cell_style = {
+                "font-size": f"{font_size}px",
+                "line-height": f"{int(font_size * 1.2)}px",
+                "padding": "4px",
+            }
+
+            # Configure selection
+            gb.configure_selection("single", use_checkbox=True)  # type: ignore
+
+            # Hide metadata columns
+            if has_table_dict:
+                gb.configure_column("table_dict", hide=True)  # type: ignore
+            if has_image_array:
+                gb.configure_column("image_array", hide=True)  # type: ignore
+
+            # Hide row index
+            gb.configure_column("_row_index", hide=True)  # type: ignore
+
+            # Configure columns
+            for col in df.columns:
+                if col in ["table_dict", "image_array", "_row_index"]:
+                    continue  # Already configured above
+                elif col == content_col_name:
+                    gb.configure_column(  # type: ignore
+                        col,
+                        minWidth=250,
+                        maxWidth=1000,
+                        flex=1,
+                        wrapText=True,
+                        autoHeight=True,
+                        cellStyle=cell_style,
+                        filter=True,
+                    )
                 else:
-                    st.error(f"Erreur lors du clustering : {response.text}")
-            except Exception as e:
-                st.error(f"Erreur de communication avec l'API : {str(e)}")
+                    avg_length = df[col].astype(str).apply(len).mean()  # type: ignore
+                    if avg_length < 15:
+                        gb.configure_column(  # type: ignore
+                            col,
+                            minWidth=80,
+                            maxWidth=150,
+                            flex=0.5,
+                            autoSizeColumn=True,
+                            cellStyle=cell_style,
+                            filter=True,
+                        )
+                    elif avg_length < 50:
+                        gb.configure_column(  # type: ignore
+                            col,
+                            minWidth=120,
+                            maxWidth=300,
+                            flex=0.8,
+                            wrapText=True,
+                            cellStyle=cell_style,
+                            filter=True,
+                        )
+                    else:
+                        gb.configure_column(  # type: ignore
+                            col,
+                            minWidth=150,
+                            maxWidth=500,
+                            flex=0.9,
+                            wrapText=True,
+                            autoHeight=True,
+                            cellStyle=cell_style,
+                            filter=True,
+                        )
+
+            # Custom CSS for header styling
+            custom_css = {
+                ".header-style": {"font-size": f"{font_size}px", "font-weight": "bold"}
+            }
+
+            # Configure grid options
+            gb.configure_grid_options(  # type: ignore
+                domLayout="normal",
+                rowHeight=int(font_size * 2.5),
+                autoSizeColumns=True,
+                suppressColumnVirtualisation=False,
+                headerHeight=int(font_size * 2),
+                defaultColDef={"cellStyle": cell_style, "headerClass": "header-style"},
+                enableFilter=True,
+            )
+
+            # Configure default column properties
+            gb.configure_default_column(  # type: ignore
+                editable=False,
+                groupable=True,
+                sortable=True,
+                filterable=True,
+                resizable=True,
+            )
+            
+          
+            # Build grid options
+            grid_options = gb.build()  # type: ignore
+
+            # Create a unique key for the grid
+            grid_key = f"grid_{key_suffix}"
+
+            # Create the grid
+            grid_response = AgGrid(
+                df,
+                gridOptions=grid_options,  # type: ignore
+                data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+                update_mode=GridUpdateMode.SELECTION_CHANGED
+                | GridUpdateMode.VALUE_CHANGED,
+                fit_columns_on_grid_load=True,
+                theme="streamlit",
+                enable_enterprise_modules=False,
+                height=estimated_height,
+                custom_css=custom_css,
+                key=grid_key,
+                allow_unsafe_jscode=True,
+            )
+
+            # Get the filtered data for CSV export
+            filtered_data = grid_response["data"]  # type: ignore
+            filtered_df = pd.DataFrame(filtered_data)  # type: ignore
+
+            # Remove internal columns before export
+            if "_row_index" in filtered_df.columns:
+                filtered_df = filtered_df.drop(columns=["_row_index"])
+
+            # Create CSV with proper quoting for text content
+            csv = filtered_df.to_csv(
+                index=False,
+                quoting=2,  # QUOTE_NONNUMERIC: quote all non-numeric fields
+                quotechar='"',
+                sep=";",
+            ).encode()
+
+            b64 = base64.b64encode(csv).decode()
+            href = (
+                f'<a href="data:file/csv;base64,{b64}" download="exported_data.csv" '
+                f'class="download-button">Export to CSV</a>'
+            )
+
+            st.markdown(
+                """
+                <style>
+                .download-button {
+                    display: inline-block;
+                    padding: 0.5em 1em;
+                    margin-top: 10px;
+                    color: white;
+                    background-color: #FF4B4B;
+                    border-radius: 0.25rem;
+                    text-decoration: none;
+                    font-weight: bold;
+                    text-align: center;
+                }
+                .download-button:hover {
+                    background-color: #FF6B6B;
+                    color: white;
+                }
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            st.markdown(href, unsafe_allow_html=True)
+
+        # Create a container for the details panel that now only shows metadata expanders
+        with details_col:
+            selected_rows = grid_response.get("selected_rows", None)  # type: ignore
+            if selected_rows is not None and len(selected_rows) > 0:  # type: ignore
+                selected_row = selected_rows.iloc[0]  # type: ignore # Get the first selected row
+                row_index = selected_row.get("_row_index")  # type: ignore
+                if row_index is not None:
+                    row_index = int(row_index)  # type: ignore # Ensure it's an integer
+
+                    # Show table metadata if available
+                    if (
+                        has_table_dict
+                        and 0 <= row_index < len(df)
+                        and pd.notna(df.loc[row_index, "table_dict"])
+                        and df.loc[row_index, "table_dict"] != ""
+                    ):
+                        with st.expander("View Table Data", expanded=False):
+                            try:
+                                table_dict_str = df.loc[row_index, "table_dict"]
+                                if isinstance(table_dict_str, str):
+                                    try:
+                                        table_dict_str = table_dict_str.replace(
+                                            "'", '"'
+                                        )
+                                        table_data = json.loads(table_dict_str)
+                                    except json.JSONDecodeError:
+                                        table_data = ast.literal_eval(table_dict_str)
+                                else:
+                                    table_data = table_dict_str
+                                try:
+                                    table_df = pd.DataFrame(table_data)  # type: ignore
+                                    st.dataframe(table_df, use_container_width=True)  # type: ignore
+                                except Exception as df_err:
+                                    st.warning(
+                                        f"Could not convert to DataFrame: {df_err}"
+                                    )
+                                    st.json(table_data)
+                            except Exception as e:
+                                st.error(f"Error processing table data: {e}")
+                                st.code(str(df.loc[row_index, "table_dict"])[:500])
+
+                    # Show image metadata if available
+                    if (
+                        has_image_array
+                        and 0 <= row_index < len(df)
+                        and pd.notna(df.loc[row_index, "image_array"])
+                        and df.loc[row_index, "image_array"] != ""
+                    ):
+                        with st.expander("View Image", expanded=False):
+                            try:
+                                image_data = df.loc[row_index, "image_array"]
+                                if isinstance(image_data, str):
+                                    try:
+                                        image_data = image_data.replace("'", '"')
+                                        image_array = json.loads(image_data)
+                                        st.image(np.array(image_array))
+                                    except json.JSONDecodeError:
+                                        try:
+                                            image_bytes = base64.b64decode(image_data)
+                                            image = Image.open(BytesIO(image_bytes))
+                                            st.image(image)
+                                        except Exception as img_err:
+                                            st.warning(
+                                                f"Could not parse image data: {img_err}"
+                                            )
+                                            st.code(image_data[:500])
+                                elif isinstance(image_data, (list, np.ndarray)):
+                                    st.image(np.array(image_data))
+                                else:
+                                    st.warning(
+                                        f"Unsupported image data format: {type(image_data)}"
+                                    )
+                            except Exception as e:
+                                st.error(f"Error displaying image: {e}")
+                                st.code(str(df.loc[row_index, "image_array"])[:500])
+            # If no row is selected or no metadata exists, nothing is displayed in this panel
+
+    return grid_response  # type: ignore
