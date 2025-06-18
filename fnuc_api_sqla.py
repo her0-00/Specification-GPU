@@ -1,595 +1,406 @@
 import streamlit as st
+import requests
+import pandas as pd
+import numpy as np
+import plotly.express as px
+import re
+import seaborn as sns
+import matplotlib.pyplot as plt
 
-from utils.chroma_filter_builder import ChromaFilterBuilder
-from utils.config import load_config
+
+API_URL = "http://127.0.0.1:8000"
+
+st.title("Apprentissaga automatique + prevision ( E-prod -CasQ'it)")
+
+# --- Choix de la source
+
+def convert_dataframe_types(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+
+    # Convertir les colonnes numériques (même si elles sont au format string)
+    for col in df.columns:
+        try:
+            df[col] = pd.to_numeric(df[col])
+        except (ValueError, TypeError):
+            pass  # Ignore si la conversion échoue
+
+    
+    return df
+source = st.radio("Source de données", ["csv", "db"])
+filename, table_name, username, password = None, None, None, None
+df = None
+
+if source == "csv":
+    uploaded_file = st.file_uploader("Uploader un fichier CSV", type=["csv"])
+    if uploaded_file is not None:
+        files = {"file": (uploaded_file.name, uploaded_file.getvalue())}
+        resp = requests.post(f"{API_URL}/upload_csv/", files=files)
+        if resp.ok:
+            filename = resp.json()["filename"]
+            st.success(f"Fichier {filename} uploadé !")
+            data_resp = requests.get(f"{API_URL}/get_csv_data/", params={"filename": filename})
+            if data_resp.ok:
+                data_json = data_resp.json()
+                df = convert_dataframe_types(pd.DataFrame(data_json["data"], columns=data_json["columns"]))
+          
+
+                # Remplacer les None explicites par NaN (au cas où)
+                df = df.where(pd.notnull(df), None)
+
+                # Calcul du seuil : au moins 50 % de valeurs non manquantes
+                seuil = len(df) * 0.5
+
+                # Supprimer les colonnes avec plus de 50 % de valeurs manquantes
+                df = df.dropna(axis=1, thresh=seuil)
 
 
-def render_sidebar():
-    """
-    Render the sidebar with enhanced filter options and convert them into well formatted complex filters.
-    """
-    with st.sidebar:
-        st.title("Options")
-        st.header("Filters")
 
-        # Load available filters from config
-        config = st.session_state.get("config", load_config())
-        st.session_state.config = config
 
-        # Initialize active filters if not present
-        if "active_filters" not in st.session_state:
-            st.session_state.active_filters = {}
-
-        if "loose_filters" not in st.session_state:
-            st.session_state.loose_filters = {}
-
-        if "document_filters" not in st.session_state:
-            st.session_state.document_filters = {"contains": [], "not_contains": []}
-
-        # Initialize session state variables for search terms if they don't exist
-        if "contains_terms" not in st.session_state:
-            st.session_state.contains_terms = []
-
-        if "not_contains_terms" not in st.session_state:
-            st.session_state.not_contains_terms = []
-
-        # Initialize lock state for interface if not present
-        if "interface_locked" not in st.session_state:
-            st.session_state.interface_locked = False
-
-        # MOVED METADATA FILTERS TO APPEAR FIRST
-        # Add filter group options
-        st.subheader("Metadata Filters")
-
-        # Select filter grouping method at the top level
-        filter_grouping = st.radio(
-            "Filter grouping method",
-            ["AND", "OR"],
-            horizontal=True,
-            key="filter_grouping",
-            disabled=st.session_state.interface_locked,
-        )
-
-        # Render each filter based on its type
-        for filter_def in config.get("available_filters", []):  # type: ignore
-            filter_type = filter_def.get("type", "")
-            filter_key = filter_def.get("key", "")
-            filter_name = filter_def.get("name", filter_key)
-
-            with st.expander(filter_name):
-                # Add a toggle for strict/loose filtering for this filter
-                is_strict = st.toggle(
-                    "Strict filtering (exclude documents with missing values)",
-                    value=True,
-                    key=f"{filter_key}_strict",
-                    disabled=st.session_state.interface_locked,
-                )
-
-                # Store the strict/loose preference
-                st.session_state.loose_filters[filter_key] = not is_strict  # type: ignore
-
-                if filter_type == "date_range":
-                    # Set up a more flexible date range filter
-                    date_filter_type = st.radio(
-                        "Date filter type",
-                        ["Range", "Before", "After", "Exact"],
-                        horizontal=True,
-                        key=f"{filter_key}_filter_type",
-                        disabled=st.session_state.interface_locked,
-                    )
-
-                    # Initialize filter operators with defaults
-                    operator_start = "$gte"
-                    operator_end = "$lt"
-
-                    if date_filter_type == "Range":
-                        # Traditional range with two sides
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            start_date = st.date_input(
-                                "From",
-                                key=f"{filter_key}_start",
-                                disabled=st.session_state.interface_locked,
-                            )
-                            include_start = st.checkbox(
-                                "Include start date",
-                                value=True,
-                                key=f"{filter_key}_include_start",
-                                disabled=st.session_state.interface_locked,
-                            )
-                            operator_start = "$gte" if include_start else "$gt"
-
-                        with col2:
-                            end_date = st.date_input(
-                                "To",
-                                key=f"{filter_key}_end",
-                                disabled=st.session_state.interface_locked,
-                            )
-                            include_end = st.checkbox(
-                                "Include end date",
-                                value=False,
-                                key=f"{filter_key}_include_end",
-                                disabled=st.session_state.interface_locked,
-                            )
-                            operator_end = "$lte" if include_end else "$lt"
-
-                        # Create filter if both dates are provided
-                        if start_date and end_date:
-                            date_filter = ChromaFilterBuilder.date_range(
-                                field=filter_key,
-                                start_date=start_date,  # type: ignore
-                                end_date=end_date,  # type: ignore
-                                operator_start=operator_start,
-                                operator_end=operator_end,
-                            )
-
-                            # Apply filter
-                            apply_filter(filter_key, date_filter, is_strict)
-                        else:
-                            clear_filter(filter_key)
-
-                    elif date_filter_type == "Before":
-                        # One-sided before a date
-                        end_date = st.date_input(
-                            "Before date",
-                            key=f"{filter_key}_before",
-                            disabled=st.session_state.interface_locked,
-                        )
-                        include_end = st.checkbox(
-                            "Include this date",
-                            value=False,
-                            key=f"{filter_key}_include_before",
-                            disabled=st.session_state.interface_locked,
-                        )
-                        operator_end = "$lte" if include_end else "$lt"
-
-                        if end_date:
-                            date_filter = ChromaFilterBuilder.date_range(
-                                field=filter_key,
-                                end_date=end_date,  # type: ignore
-                                operator_end=operator_end,
-                            )
-
-                            # Apply filter
-                            apply_filter(filter_key, date_filter, is_strict)
-                        else:
-                            clear_filter(filter_key)
-
-                    elif date_filter_type == "After":
-                        # One-sided after a date
-                        start_date = st.date_input(
-                            "After date",
-                            key=f"{filter_key}_after",
-                            disabled=st.session_state.interface_locked,
-                        )
-                        include_start = st.checkbox(
-                            "Include this date",
-                            value=True,
-                            key=f"{filter_key}_include_after",
-                            disabled=st.session_state.interface_locked,
-                        )
-                        operator_start = "$gte" if include_start else "$gt"
-
-                        if start_date:
-                            date_filter = ChromaFilterBuilder.date_range(
-                                field=filter_key,
-                                start_date=start_date,  # type: ignore
-                                operator_start=operator_start,
-                            )
-
-                            # Apply filter
-                            apply_filter(filter_key, date_filter, is_strict)
-                        else:
-                            clear_filter(filter_key)
-
-                    elif date_filter_type == "Exact":
-                        # Exact date match
-                        exact_date = st.date_input(
-                            "Exact date",
-                            key=f"{filter_key}_exact",
-                            disabled=st.session_state.interface_locked,
-                        )
-
-                        if exact_date:
-                            # Format date as string for exact matching
-                            date_str = exact_date.isoformat()  # type: ignore
-                            date_filter = ChromaFilterBuilder.eq(
-                                field=filter_key, value=date_str
-                            )
-
-                            # Apply filter
-                            apply_filter(filter_key, date_filter, is_strict)
-                        else:
-                            clear_filter(filter_key)
-
-                elif filter_type == "multiselect":
-                    options = filter_def.get("options", [])
-                    selected = st.multiselect(
-                        "Select options",
-                        options=options,
-                        key=f"{filter_key}_select",
-                        disabled=st.session_state.interface_locked,
-                    )
-
-                    # Determine if this is an inclusion or exclusion filter
-                    filter_mode = st.radio(
-                        "Filter mode",
-                        ["Include selected", "Exclude selected"],
-                        horizontal=True,
-                        key=f"{filter_key}_mode",
-                        disabled=st.session_state.interface_locked,
-                    )
-
-                    # Select operator for this specific filter
-                    inner_operator = st.radio(
-                        "Selection operator",
-                        ["OR (any selected item)", "AND (all selected items)"],
-                        horizontal=True,
-                        key=f"{filter_key}_operator",
-                        disabled=st.session_state.interface_locked,
-                    )
-
-                    if selected:
-                        if filter_mode == "Include selected":
-                            # Handle inclusion logic (as before)
-                            if inner_operator.startswith("OR"):
-                                # Use in_list for OR logic (any matching value)
-                                multiselect_filter = ChromaFilterBuilder.in_list(
-                                    field=filter_key, values=selected
-                                )
-                            else:
-                                # Use AND logic (all values must match)
-                                conditions = [
-                                    ChromaFilterBuilder.eq(
-                                        field=filter_key, value=value
-                                    )
-                                    for value in selected
-                                ]
-                                multiselect_filter = ChromaFilterBuilder.and_filter(
-                                    conditions=conditions
-                                )
-                        else:  # "Exclude selected"
-                            # Handle exclusion logic
-                            if inner_operator.startswith("OR"):
-                                # If OR: Document can match if ANY of the selected values is missing
-                                # This is the same as NOT IN
-                                multiselect_filter = ChromaFilterBuilder.not_in_list(
-                                    field=filter_key, values=selected
-                                )
-                            else:
-                                # If AND: Document must not match ANY of the selected values
-                                # (all selected values must be absent)
-                                conditions = [
-                                    ChromaFilterBuilder.ne(
-                                        field=filter_key, value=value
-                                    )
-                                    for value in selected
-                                ]
-                                multiselect_filter = ChromaFilterBuilder.and_filter(
-                                    conditions=conditions
-                                )
-
-                        # Apply filter with strict/loose setting
-                        apply_filter(filter_key, multiselect_filter, is_strict)
-                    else:
-                        clear_filter(filter_key)
-
-                elif filter_type == "selectbox":
-                    options = filter_def.get("options", [])
-
-                    # Create a blank/empty option as the first option for no selection
-                    display_options = [""] + options
-
-                    selected = st.selectbox(
-                        "Select an option",
-                        options=display_options,
-                        key=f"{filter_key}_select",
-                        disabled=st.session_state.interface_locked,
-                    )
-
-                    # Add an option for not equal (exclusion)
-                    filter_mode = st.radio(
-                        "Filter mode",
-                        ["Equal to selected", "Not equal to selected"],
-                        horizontal=True,
-                        key=f"{filter_key}_mode",
-                        disabled=st.session_state.interface_locked,
-                    )
-
-                    if (
-                        selected
-                    ):  # Only apply filter if something is selected (not blank)
-                        if filter_mode == "Equal to selected":
-                            # Create equality filter for the selected value
-                            selectbox_filter = ChromaFilterBuilder.eq(
-                                field=filter_key, value=selected
-                            )
-                        else:  # "Not equal to selected"
-                            # Create not-equal filter for the selected value
-                            selectbox_filter = ChromaFilterBuilder.ne(
-                                field=filter_key, value=selected
-                            )
-
-                        # Apply filter with strict/loose setting
-                        apply_filter(filter_key, selectbox_filter, is_strict)
-                    else:
-                        clear_filter(filter_key)
-
-                elif filter_type == "text":
-                    text_value = st.text_input(
-                        "Enter value",
-                        key=f"{filter_key}_text",
-                        disabled=st.session_state.interface_locked,
-                    )
-
-                    # Add comparison operators for text fields
-                    comparison_operator = st.selectbox(
-                        "Comparison operator",
-                        ["Equals", "Not equals", "Contains", "Does not contain"],
-                        key=f"{filter_key}_comparison",
-                        disabled=st.session_state.interface_locked,
-                    )
-
-                    if text_value:
-                        if comparison_operator == "Equals":
-                            text_filter = ChromaFilterBuilder.eq(
-                                field=filter_key, value=text_value
-                            )
-                        elif comparison_operator == "Not equals":
-                            text_filter = ChromaFilterBuilder.ne(
-                                field=filter_key, value=text_value
-                            )
-                        elif comparison_operator == "Contains":
-                            # For contains, we'll use $like if it's supported by ChromaDB
-                            # If not, we can implement basic contains functionality
-                            text_filter = {filter_key: {"$contains": text_value}}
-                        elif comparison_operator == "Does not contain":
-                            # For does not contain, we'll invert the contains logic
-                            text_filter = {filter_key: {"$not_contains": text_value}}
-
-                        # Apply filter with strict/loose setting
-                        apply_filter(filter_key, text_filter, is_strict)  # type: ignore
-                    else:
-                        clear_filter(filter_key)
-
-        # Create a section for full-text search
-        st.subheader("Full-Text Search")
-
-        # Create separate expanders for contains and not contains - set expanded=False
-        with st.expander("Contains Terms", expanded=False):
-            # Display current contains terms
-            if st.session_state.contains_terms:  # type: ignore
-                st.write("Current 'contains' search terms:")  # type: ignore
-                for i, term in enumerate(st.session_state.contains_terms):  # type: ignore
-                    col1, col2 = st.columns([5, 1])
-                    with col1:
-                        st.text(f"• {term}")
-                    with col2:
-                        if st.button(
-                            "✕",
-                            key=f"remove_contains_{i}",
-                            help="Remove term",
-                            disabled=st.session_state.interface_locked,
-                        ):
-                            st.session_state.contains_terms.pop(i)  # type: ignore
-                            st.rerun()
-
-            # Add new contains term
-            new_contains = st.text_input(
-                "Add term that documents must contain:",
-                key="new_contains_term",
-                disabled=st.session_state.interface_locked,
-            )
-            if (
-                st.button(
-                    "Add Contains Term", disabled=st.session_state.interface_locked
-                )
-                and new_contains.strip()
-            ):
-                st.session_state.contains_terms.append(new_contains.strip())  # type: ignore
-                st.rerun()
-
-            # Choose operator for contains terms
-            if len(st.session_state.contains_terms) > 1:  # type: ignore
-                contains_operator = st.radio(  # type: ignore  # noqa: F841
-                    "How to combine 'contains' terms:",
-                    [
-                        "AND (all terms must be present)",
-                        "OR (any term must be present)",
-                    ],
-                    key="contains_operator",
-                    disabled=st.session_state.interface_locked,
-                )
-
-        with st.expander("Does Not Contain Terms", expanded=False):
-            # Display current not_contains terms
-            if st.session_state.not_contains_terms:  # type: ignore
-                st.write("Current 'does not contain' search terms:")  # type: ignore
-                for i, term in enumerate(st.session_state.not_contains_terms):  # type: ignore
-                    col1, col2 = st.columns([5, 1])
-                    with col1:
-                        st.text(f"• {term}")
-                    with col2:
-                        if st.button(
-                            "✕",
-                            key=f"remove_not_contains_{i}",
-                            help="Remove term",
-                            disabled=st.session_state.interface_locked,
-                        ):
-                            st.session_state.not_contains_terms.pop(i)  # type: ignore
-                            st.rerun()
-
-            # Add new not_contains term
-            new_not_contains = st.text_input(
-                "Add term that documents must NOT contain:",
-                key="new_not_contains_term",
-                disabled=st.session_state.interface_locked,
-            )
-            if (
-                st.button(
-                    "Add 'Does Not Contain' Term",
-                    disabled=st.session_state.interface_locked,
-                )
-                and new_not_contains.strip()
-            ):
-                st.session_state.not_contains_terms.append(new_not_contains.strip())  # type: ignore
-                st.rerun()
-
-            # Choose operator for not_contains terms
-            if len(st.session_state.not_contains_terms) > 1:  # type: ignore
-                not_contains_operator = st.radio(  # type: ignore  # noqa: F841
-                    "How to combine 'does not contain' terms:",
-                    [
-                        "AND (none of these terms should be present)",
-                        "OR (at least one term should be absent)",
-                    ],
-                    key="not_contains_operator",
-                    disabled=st.session_state.interface_locked,
-                )
-
-        # Choose the top-level operator between contains and not_contains conditions
-        if st.session_state.contains_terms and st.session_state.not_contains_terms:  # type: ignore
-            doc_filter_top_operator = st.radio(  # type: ignore  # noqa: F841
-                "How to combine 'contains' and 'does not contain' conditions:",
-                [
-                    "AND (both conditions must be satisfied)",
-                    "OR (either condition must be satisfied)",
-                ],
-                key="doc_filter_top_operator",
-                disabled=st.session_state.interface_locked,
-            )
-
-        # Build document filter based on selections
-        build_document_filter()
-
-        # Combine metadata filters based on grouping method
-        if st.session_state.active_filters:  # type: ignore
-            combined_filters = list(st.session_state.active_filters.values())  # type: ignore
-
-            # Only use logical operators if we have multiple conditions
-            if len(combined_filters) > 1:  # type: ignore
-                if filter_grouping == "AND":
-                    complex_filter = ChromaFilterBuilder.and_filter(
-                        conditions=combined_filters  # type: ignore
-                    )
-                else:  # OR
-                    complex_filter = ChromaFilterBuilder.or_filter(
-                        conditions=combined_filters  # type: ignore
-                    )
-            else:
-                # Just use the single filter directly
-                complex_filter = combined_filters[0]  # type: ignore
-
-            st.session_state.metadata_filters = complex_filter
+                
+            st.dataframe(df)
         else:
-            st.session_state.metadata_filters = None
-
-        # Display active filters for debugging
-        if st.checkbox(
-            "Show active filters", disabled=st.session_state.interface_locked
-        ):
-            st.subheader("Metadata Filters")
-            st.json(st.session_state.metadata_filters or {})  # type: ignore
-
-            st.subheader("Document Content Filters")
-            st.json(st.session_state.where_document or {})
-
-            st.subheader("Loose Filters Settings")
-            st.json(st.session_state.loose_filters or {})  # type: ignore
-
-
-def apply_filter(filter_key, filter_value, is_strict):  # type: ignore
-    """Helper function to apply a filter with strict/loose setting."""
-    if not is_strict:
-        # Allow documents with missing values
-        st.session_state.active_filters[filter_key] = ChromaFilterBuilder.or_filter(
-            [filter_value, ChromaFilterBuilder.eq(field=filter_key, value="")]  # type: ignore
-        )
+                st.error("Erreur de lecture des données")
     else:
-        st.session_state.active_filters[filter_key] = filter_value
+            st.error("Erreur upload")
 
+elif source == "db":
+    st.header("Connexion à la base PostgreSQL")
+    username = st.text_input("Nom d'utilisateur DB")
+    password = st.text_input("Mot de passe DB", type="password")
+    if username and password:
+        if st.button("Lister les tables"):
+            req = {"username": username, "password": password, "query": ""}
+            tables = requests.post(f"{API_URL}/db/list_tables/", json=req).json()
+            st.session_state["db_tables"] = tables
+        tables = st.session_state.get("db_tables", [])
+        table_name = st.selectbox("Table", tables) if tables else None
+        if table_name:
+            sql = f"SELECT * FROM {table_name} limit 10"
+            req = {"username": username, "password": password, "query": sql}
+            data_resp = requests.post(f"{API_URL}/db/query/", json=req)
+            if data_resp.ok:
+                data_json = data_resp.json()
+                df = convert_dataframe_types(pd.DataFrame(data_json["data"], columns=data_json["columns"]))
+                 # Remplacer les None explicites par NaN (au cas où)
+                df = df.where(pd.notnull(df), None)
 
-def clear_filter(filter_key):  # type: ignore
-    """Helper function to clear a filter if it exists."""
-    if filter_key in st.session_state.active_filters:
-        del st.session_state.active_filters[filter_key]
+                # Calcul du seuil : au moins 50 % de valeurs non manquantes
+                seuil = len(df) * 0.5
 
+                # Supprimer les colonnes avec plus de 50 % de valeurs manquantes
+                df = df.dropna(axis=1, thresh=seuil)
+                st.dataframe(df)
 
-def build_document_filter():
-    """
-    Build the document filter based on the current search terms and operators.
-    """
-    contains_terms = st.session_state.get("contains_terms", [])
-    not_contains_terms = st.session_state.get("not_contains_terms", [])
-
-    # If no search terms are defined, clear the document filter
-    if not contains_terms and not not_contains_terms:
-        st.session_state.where_document = None
-        return
-
-    # Build contains filter
-    contains_filter = None
-    if contains_terms:
-        if len(contains_terms) == 1:
-            # Single term - simple contains
-            contains_filter = {"$contains": contains_terms[0]}
-        else:
-            # Multiple terms - need to use operator
-            contains_operator = st.session_state.get(
-                "contains_operator", "AND (all terms must be present)"
-            )
-            if contains_operator.startswith("AND"):
-                # AND logic - all terms must be present
-                contains_filter = {
-                    "$and": [{"$contains": term} for term in contains_terms]
-                }
             else:
-                # OR logic - any term can be present
-                contains_filter = {
-                    "$or": [{"$contains": term} for term in contains_terms]
-                }
+                st.error("Erreur de lecture des données")
+if df is not None :
+   
+    df_clean = df.copy()
+    df_clean = df_clean.replace([float('inf'), float('-inf')], pd.NA)
+    df_clean = df_clean.dropna()
 
-    # Build not_contains filter
-    not_contains_filter = None
-    if not_contains_terms:
-        if len(not_contains_terms) == 1:
-            # Single term - simple not_contains
-            not_contains_filter = {"$not_contains": not_contains_terms[0]}
+
+
+# --- Analyses si DataFrame chargé
+if df_clean is not None:
+    # Statistiques
+    with st.expander("Statistiques descriptives"):
+        req = {
+            "data": df_clean.to_numpy().tolist(),
+            "columns": list(df_clean.columns)
+        }
+        desc = requests.post(f"{API_URL}/stats/describe/", json=req).json()
+        st.write(pd.DataFrame(desc))
+
+    with st.expander("Skewness & Kurtosis"):
+        req = {
+            "data": df_clean.to_numpy().tolist(),
+            "columns": list(df_clean.columns)
+        }
+        response = requests.post(f"{API_URL}/stats/skew_kurtosis/", json=req)
+
+        if response.ok:
+            skew_kurt = response.json()
+            st.json(skew_kurt)
         else:
-            # Multiple terms - need to use operator
-            not_contains_operator = st.session_state.get(
-                "not_contains_operator", "AND (none of these terms should be present)"
+            st.error(f"❌ Erreur API : {response.status_code} - {response.text}")
+
+        
+
+    # Outliers
+    with st.expander("Détection d'outliers"):
+        method = st.selectbox("Méthode", ["zscore", "iqr"])
+        threshold = st.slider("Seuil (z-score)", 2.0, 5.0, 3.0)
+        req = {
+            "data": df_clean.to_numpy().tolist(),
+            "columns": list(df_clean.columns)
+        }
+        outliers = requests.post(
+            f"{API_URL}/stats/outliers/",
+            json=req,
+            params={"method": method, "threshold": threshold}
+        ).json()
+        st.write(outliers)
+
+    # Visualisation
+
+st.header("Visualisation")
+
+
+
+if df is not None:
+    num_cols = df.select_dtypes(include=np.number).columns.tolist()
+    req = {
+        "data": df_clean.to_numpy().tolist(),
+        "columns": list(df_clean.columns)
+    }
+   
+    # Exemple : sélection de la colonne à visualiser
+    col_name = st.selectbox("📌 Sélectionnez une colonne à visualiser", df_clean.columns)
+
+
+    # Appel à l'API
+    response = requests.post(
+        f"{API_URL}/visualization/histogram/",
+        json=req,
+        params={"col_name": col_name}
+    )
+
+    # Affichage du graphique
+    if response.ok:
+        hist_response = response.json()
+
+        if pd.api.types.is_numeric_dtype(df_clean[col_name]):
+            # Histogramme pour données quantitatives
+            hist_df = pd.DataFrame({
+                "count": hist_response["hist"],
+                "bin_start": hist_response["bin_edges"][:-1],
+                "bin_end": hist_response["bin_edges"][1:]
+            })
+            st.subheader("📊 Histogramme")
+            st.plotly_chart(
+                px.bar(hist_df, x="bin_start", y="count", labels={"bin_start": col_name}),
+                use_container_width=True
             )
-            if not_contains_operator.startswith("AND"):
-                # AND logic - all terms must be absent
-                not_contains_filter = {
-                    "$and": [{"$not_contains": term} for term in not_contains_terms]
-                }
-            else:
-                # OR logic - at least one term should be absent
-                not_contains_filter = {
-                    "$or": [{"$not_contains": term} for term in not_contains_terms]
-                }
-
-    # Combine the two filters if both exist
-    if contains_filter and not_contains_filter:
-        doc_filter_top_operator = st.session_state.get(
-            "doc_filter_top_operator", "AND (both conditions must be satisfied)"
-        )
-
-        if doc_filter_top_operator.startswith("AND"):
-            # AND logic - both conditions must be met
-            st.session_state.where_document = {
-                "$and": [contains_filter, not_contains_filter]
-            }
         else:
-            # OR logic - either condition can be met
-            st.session_state.where_document = {
-                "$or": [contains_filter, not_contains_filter]
+            # Diagramme en barres pour données qualitatives
+            hist_df = pd.DataFrame({
+                "modalities": hist_response["modalities"],
+                "frequencies": hist_response["frequencies"]
+            })
+            st.subheader("📊 Diagramme en barres")
+            st.plotly_chart(
+                px.bar(hist_df, x="modalities", y="frequencies", labels={"modalities": col_name}),
+                use_container_width=True
+            )
+    else:
+        st.error(f"❌ Erreur lors de la récupération des données : {response.text}")
+
+        # Boxplot
+        col_num = st.selectbox("Colonne numérique", num_cols, key="hist_box_col")
+        box_response = requests.post(
+            f"{API_URL}/visualization/boxplot/", json=req,
+            params={"col_nums": col_num}
+        ).json()
+        box_df = pd.DataFrame({
+            "stat": ["min", "q1", "median", "q3", "max"],
+            "value": [box_response["min"], box_response["q1"], box_response["median"], box_response["q3"], box_response["max"]]
+        })
+        st.subheader("Boxplot")
+        st.plotly_chart(px.box(df, y=col_num), use_container_width=True)
+
+    # Scatter plot
+    st.subheader("Nuage de points")
+    col_x = st.selectbox("Axe X", num_cols, key="scatter_x")
+    col_y = st.selectbox("Axe Y", num_cols, key="scatter_y")
+    if col_x and col_y:
+        scatter_response = requests.post(
+            f"{API_URL}/visualization/scatter/", json=req,
+            params={"x": col_x, "y": col_y}
+        ).json()
+        scatter_df = pd.DataFrame({
+            col_x: scatter_response["x"],
+            col_y: scatter_response["y"]
+        })
+        st.plotly_chart(px.scatter(scatter_df, x=col_x, y=col_y), use_container_width=True)
+
+#--ML--
+
+
+
+    st.header("🧠 Machine Learning non supervisé")
+
+
+
+    st.subheader("⚙️ Entraînement d’un modèle")
+
+    features = st.multiselect("🔢 Variables explicatives (features)", list(df_clean.columns), key="train_features")
+    target = st.selectbox("🎯 Variable cible", list(df_clean.columns), key="train_target")
+    # Remplacer les valeurs nulles dans la colonne cible par "Non renseigné"
+    df_clean[target] = df_clean[target].fillna("Non renseigné")
+    df_clean[target].where(pd.notnull(df_clean[target]), None)
+    df_clean[target] = df_clean[target].fillna("Non renseigné")
+    def normaliser_statut(texte):
+        if pd.isnull(texte):
+            return texte
+        # Remplacer les variantes de "accepté"
+        texte = re.sub(r"\b(accepte[eé]?|accepté[e]?|accepte|accepteé|accepteee|accepteé|acepte|acpté)\b", "Acceptée", str(texte), flags=re.IGNORECASE)
+        # Remplacer les variantes de "refusé"
+        texte = re.sub(r"\b(refuse[eé]?|refusé[e]?|refuse|refusee|refuseé|refus)\b", "Refusée", str(texte), flags=re.IGNORECASE)
+        return texte
+
+
+    df_clean[target]  = df_clean[target].apply(normaliser_statut)
+
+    model_type = st.selectbox("🧪 Modèle", [
+        "RandomForest", "LogisticRegression", "SVM", "GradientBoosting", "MLP"
+    ], key="train_model")
+
+    if st.button("🚀 Entraîner le modèle") and features and target:
+        df_ss = df_clean[features + [target]]  # Sous-ensemble des colonnes sélectionnées
+        
+        st.write(f"📉 Nombre de lignes après nettoyage : {len(df_ss)}")
+
+        if df_ss.empty:
+            st.warning("⚠️ Aucune donnée disponible après nettoyage. Veuillez vérifier les valeurs manquantes ou infinies dans votre fichier.")
+        else:
+
+            req = {
+                "data": df_ss.to_numpy().tolist(),
+                "columns": list(df_ss.columns),
+                "target_column": target,
+                "model_type": model_type,
+                "test_size": 0.2,
+                "random_state": 42,
+                "selected_features": features,
+                "session_id": "session1"
             }
-    elif contains_filter:
-        # Only contains filter exists
-        st.session_state.where_document = contains_filter
-    elif not_contains_filter:
-        # Only not_contains filter exists
-        st.session_state.where_document = not_contains_filter
+
+            with st.spinner("Entraînement en cours..."):
+                ml_resp = requests.post(f"{API_URL}/ml/train/", json=req)
+
+            if ml_resp.ok:
+                ml_res = ml_resp.json()
+                st.success("✅ Modèle entraîné avec succès !")
+                st.write("🎯 **Accuracy** :", ml_res["accuracy"])
+                st.text("📊 Rapport de classification :")
+                st.code(ml_res["report"])
+                # Conversion en matrice numpy
+                confusion_matrix = np.array([
+                    [ ml_res["confusion_matrix"][0][0],  ml_res["confusion_matrix"][0][1],  ml_res["confusion_matrix"][0][2]],
+                    [ ml_res["confusion_matrix"][1][0],  ml_res["confusion_matrix"][1][1],  ml_res["confusion_matrix"][1][2]],
+                    [ ml_res["confusion_matrix"][2][0],  ml_res["confusion_matrix"][2][1],  ml_res["confusion_matrix"][2][2]]
+                ])
+
+                # Étiquettes des classes
+                class_labels = ["Classe 0", "Classe 1", "Classe 2"]
+
+                # Affichage de la heatmap
+                fig, ax = plt.subplots()
+                sns.heatmap(confusion_matrix, annot=True, fmt="d", cmap="Blues", xticklabels=class_labels, yticklabels=class_labels, ax=ax)
+                ax.set_xlabel("Prédit")
+                ax.set_ylabel("Réel")
+                ax.set_title("🧩 Matrice de confusion")
+
+                st.pyplot(fig)
+
+                st.session_state["model_path"] = ml_res["model_path"]
+            else:
+                st.error(f"❌ Erreur dans l'entraînement : {ml_resp.text}")
+
+
+
+
+    st.subheader("📊 Comparaison de plusieurs modèles")
+
+    compare_features = st.multiselect("Variables explicatives (features)", list(df_clean.columns), key="compare_features")
+    compare_target = st.selectbox("Variable cible", list(df_clean.columns), key="compare_target")
+    model_types = st.multiselect("Modèles à comparer", [
+        "RandomForest", "LogisticRegression", "SVM", "GradientBoosting", "MLP"
+    ], default=["RandomForest", "LogisticRegression"], key="compare_models")
+
+    if st.button("Comparer les modèles") and compare_features and compare_target and model_types:
+        req = {
+            "data": df_clean.to_numpy().tolist(),
+            "columns": list(df_clean.columns),
+            "target_column": compare_target,
+            "test_size": 0.2,
+            "random_state": 42,
+            "session_id": "session1",
+            "selected_features": compare_features,
+            "model_types": model_types
+        }
+
+        compare_resp = requests.post(f"{API_URL}/ml/compare/", json=req)
+        if compare_resp.ok:
+            results = compare_resp.json()
+            for model_name, metrics in results.items():
+                st.subheader(f"🧠 Résultats pour {model_name}")
+                if "error" in metrics:
+                    st.error(f"Erreur : {metrics['error']}")
+                else:
+                    st.write("🎯 Accuracy :", metrics["accuracy"])
+                    st.text("📊 Rapport de classification :")
+                    st.code(metrics["report"])
+                    st.write("🧩 Matrice de confusion :", metrics["confusion_matrix"])
+        else:
+            st.error(f"❌ Erreur lors de la comparaison : {compare_resp.text}")
+
+    st.subheader("🔮 Prédiction sur les 5 premières lignes")
+
+    if  features is not None :#"model_path" in st.session_state and features:
+        if st.button("Prediction"):
+            pred_data = df_clean[features].head(5).values.tolist()
+            pred_req = {
+                "data": pred_data,
+                "columns": features,
+                "session_id": "session1"
+            } 
+            pred_resp = requests.post(f"{API_URL}/ml/predict/", json=pred_req)
+            if pred_resp.ok:
+                st.write("📈 Prédictions :", pred_resp.json()["predictions"])
+            else:
+                st.error(f"❌ Erreur lors de la prédiction : {pred_resp.text}")
+
+
+        # Clustering
+
+
+    st.header("🔍 Clustering non supervisé (KMeans)")
+
+    if df is not None:
+        numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+        features = st.multiselect("Sélectionnez les variables numériques à utiliser", numeric_cols)
+        n_clusters = st.slider("Nombre de clusters", min_value=2, max_value=10, value=3)
+
+        if st.button("Lancer le clustering") and features:
+            params = {
+                "source": "local",
+                "features": features,
+                "n_clusters": n_clusters
+            }
+
+            try:
+                response = requests.post(f"{API_URL}/clustering/kmeans/", params=params)
+                if response.ok:
+                    result = response.json()
+                    df["cluster"] = result["clusters"]
+                    st.success("✅ Clustering effectué avec succès !")
+                    st.write("📍 Centres des clusters :", result["centers"])
+
+                    if len(features) == 2:
+                        fig = px.scatter(
+                            df,
+                            x=features[0],
+                            y=features[1],
+                            color=df["cluster"].astype(str),
+                            title="Visualisation des clusters",
+                            labels={"color": "Cluster"}
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.info("Sélectionnez exactement 2 variables pour afficher un graphique de dispersion.")
+                else:
+                    st.error(f"Erreur lors du clustering : {response.text}")
+            except Exception as e:
+                st.error(f"Erreur de communication avec l'API : {str(e)}")
