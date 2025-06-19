@@ -29,7 +29,7 @@ def render_sidebar():
 
     with st.sidebar:
         st.title("🛠️ Options")
-        st.markdown("Sélectionnez et combinez les filtres ci-dessous pour affiner votre recherche de documents. Utilisez la section avancée pour des critères complexes.", help="Utilisez les filtres pour personnaliser vos requêtes.")
+        st.markdown("Sélectionnez et combinez les filtres ci-dessous pour affiner votre recherche de documents. Utilisez la section avancée pour des critères complexes.", help="Utilisez les filtres pour ajuster la recherche.")
 
         config = st.session_state.get("config", load_config())
         st.session_state.config = config
@@ -43,7 +43,7 @@ def render_sidebar():
             st.session_state.not_contains_terms = []
             st.session_state.where_document = None
             st.session_state.metadata_filters = None
-            st.experimental_rerun()
+            st.rerun()
 
         # State init
         st.session_state.setdefault("active_filters", {})
@@ -70,6 +70,13 @@ def render_sidebar():
             filter_key = filter_def.get("key", "")
             filter_name = filter_def.get("name", filter_key)
             with st.expander(f"🔹 {filter_name}", expanded=False):
+                filter_enabled = st.toggle(
+                    "Activer ce filtre",
+                    value=False,
+                    key=f"{filter_key}_enabled",
+                    disabled=st.session_state.interface_locked,
+                    help="Active ou désactive ce filtre."
+                )
                 is_strict = st.toggle(
                     "Filtrage strict (exclure les documents sans valeur)",
                     value=True,
@@ -78,6 +85,10 @@ def render_sidebar():
                     disabled=st.session_state.interface_locked
                 )
                 st.session_state.loose_filters[filter_key] = not is_strict
+
+                if not filter_enabled:
+                    clear_filter(filter_key)
+                    continue  # Passe au filtre suivant
 
                 if filter_type == "date_range":
                     date_filter_type = st.radio(
@@ -314,11 +325,11 @@ def render_sidebar():
                 st.markdown(f"<span class='sidebar-badge'>{term}</span>", unsafe_allow_html=True)
                 if st.button("✕", key=f"remove_contains_{i}"):
                     st.session_state.contains_terms.pop(i)
-                    st.experimental_rerun()
+                    st.rerun()
             new_contains = st.text_input("Ajouter un terme à contenir :", key="new_contains_term")
             if st.button("Ajouter", key="add_contains_term") and new_contains.strip():
                 st.session_state.contains_terms.append(new_contains.strip())
-                st.experimental_rerun()
+                st.rerun()
             if len(st.session_state.contains_terms) > 1:
                 st.radio(
                     "Combinaison des termes",
@@ -331,11 +342,11 @@ def render_sidebar():
                 st.markdown(f"<span class='sidebar-badge'>{term}</span>", unsafe_allow_html=True)
                 if st.button("✕", key=f"remove_not_contains_{i}"):
                     st.session_state.not_contains_terms.pop(i)
-                    st.experimental_rerun()
+                    st.rerun()
             new_not_contains = st.text_input("Ajouter un terme à exclure :", key="new_not_contains_term")
             if st.button("Ajouter", key="add_not_contains_term") and new_not_contains.strip():
                 st.session_state.not_contains_terms.append(new_not_contains.strip())
-                st.experimental_rerun()
+                st.rerun()
             if len(st.session_state.not_contains_terms) > 1:
                 st.radio(
                     "Combinaison des termes",
@@ -394,7 +405,6 @@ def render_sidebar():
             st.json(st.session_state.get("metadata_filters", {}))
             st.json(st.session_state.get("where_document", {}))
             st.json(st.session_state.get("loose_filters", {}))
-
 # Fonctions utilitaires (inchangées)
 def apply_filter(filter_key, filter_value, is_strict):  # type: ignore
     """Helper function to apply a filter with strict/loose setting."""
