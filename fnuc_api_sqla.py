@@ -2,11 +2,16 @@ import streamlit as st
 from utils.chroma_filter_builder import ChromaFilterBuilder
 from utils.config import load_config
 
+# Mise en cache du chargement de la config
+@st.cache_data
+def get_config():
+    return load_config()
+
 def render_sidebar():
     """
-    Render the sidebar with enhanced filter options and convert them into well formatted complex filters.
+    Sidebar optimisée pour le chargement/rafraîchissement des filtres.
     """
-    # --- CSS pour badges et boutons arrondis ---
+    # CSS pour badges/boutons
     st.markdown("""
         <style>
         .sidebar-badge {
@@ -31,29 +36,32 @@ def render_sidebar():
         st.title("🛠️ Options")
         st.markdown("Sélectionnez et combinez les filtres ci-dessous pour affiner votre recherche de documents. Utilisez la section avancée pour des critères complexes.", help="Utilisez les filtres pour ajuster la recherche.")
 
-        config = st.session_state.get("config", load_config())
-        st.session_state.config = config
+        # Chargement config (mise en cache)
+        if "config" not in st.session_state:
+            st.session_state.config = get_config()
+        config = st.session_state.config
 
-        # Bouton de reset global
+        # Initialisation rapide du state
+        for k, v in [
+            ("active_filters", {}),
+            ("loose_filters", {}),
+            ("document_filters", {"contains": [], "not_contains": []}),
+            ("contains_terms", []),
+            ("not_contains_terms", []),
+            ("interface_locked", False)
+        ]:
+            st.session_state.setdefault(k, v)
+
+        # RESET global
         if st.button("♻️ Réinitialiser tous les filtres", key="reset_all", help="Enlève tous les filtres actifs", type="primary"):
-            st.session_state.active_filters = {}
-            st.session_state.loose_filters = {}
-            st.session_state.document_filters = {"contains": [], "not_contains": []}
-            st.session_state.contains_terms = []
-            st.session_state.not_contains_terms = []
-            st.session_state.where_document = None
-            st.session_state.metadata_filters = None
+            for k in [
+                "active_filters", "loose_filters",
+                "document_filters", "contains_terms",
+                "not_contains_terms", "where_document", "metadata_filters"
+            ]:
+                st.session_state[k] = {} if isinstance(st.session_state[k], dict) else []
             st.rerun()
 
-        # State init
-        st.session_state.setdefault("active_filters", {})
-        st.session_state.setdefault("loose_filters", {})
-        st.session_state.setdefault("document_filters", {"contains": [], "not_contains": []})
-        st.session_state.setdefault("contains_terms", [])
-        st.session_state.setdefault("not_contains_terms", [])
-        st.session_state.setdefault("interface_locked", False)
-
-        # Groupement logique des filtres méta
         st.subheader("🔗 Combinaison de filtres")
         filter_grouping = st.radio(
             "Méthode de groupement",
@@ -65,18 +73,28 @@ def render_sidebar():
 
         # --- Filtres Metadata ---
         st.markdown("### 📑 Filtres métadonnées")
+
         for filter_def in config.get("available_filters", []):
             filter_type = filter_def.get("type", "")
             filter_key = filter_def.get("key", "")
             filter_name = filter_def.get("name", filter_key)
-            with st.expander(f"🔹 {filter_name}", expanded=False):
-                filter_enabled = st.toggle(
-                    "Activer ce filtre",
-                    value=False,
-                    key=f"{filter_key}_enabled",
-                    disabled=st.session_state.interface_locked,
-                    help="Active ou désactive ce filtre."
-                )
+            with st.expander(f"🧑🏿{filter_name}", expanded=False):
+                if filter_type =="date_range" :
+                    filter_enabled = st.toggle(
+                        "Activer ce filtre",
+                        value=False,
+                        key=f"{filter_key}_enabled",
+                        disabled=st.session_state.interface_locked,
+                        help="Active ou désactive ce filtre."
+                    )
+                else :
+                    filter_enabled = st.toggle(
+                        "Activer ce filtre",
+                        value=True,
+                        key=f"{filter_key}_enabled",
+                        disabled=st.session_state.interface_locked,
+                        help="Active ou désactive ce filtre."
+                    )
                 is_strict = st.toggle(
                     "Filtrage strict (exclure les documents sans valeur)",
                     value=True,
@@ -88,7 +106,7 @@ def render_sidebar():
 
                 if not filter_enabled:
                     clear_filter(filter_key)
-                    continue  # Passe au filtre suivant
+                    continue
 
                 if filter_type == "date_range":
                     date_filter_type = st.radio(
@@ -321,11 +339,12 @@ def render_sidebar():
         # --- Recherche plein texte ---
         st.markdown("### 🔍 Recherche plein texte")
         with st.expander("Contient les termes…", expanded=False):
+            # Affichage sous forme de badges, bouton suppression allégé (un bouton pour tout effacer)
             for i, term in enumerate(st.session_state.get("contains_terms", [])):
                 st.markdown(f"<span class='sidebar-badge'>{term}</span>", unsafe_allow_html=True)
-                if st.button("✕", key=f"remove_contains_{i}"):
-                    st.session_state.contains_terms.pop(i)
-                    st.rerun()
+            if st.button("Vider tous les termes à contenir", key="clear_all_contains"):
+                st.session_state.contains_terms = []
+                st.rerun()
             new_contains = st.text_input("Ajouter un terme à contenir :", key="new_contains_term")
             if st.button("Ajouter", key="add_contains_term") and new_contains.strip():
                 st.session_state.contains_terms.append(new_contains.strip())
@@ -340,9 +359,9 @@ def render_sidebar():
         with st.expander("…Ne contient PAS les termes", expanded=False):
             for i, term in enumerate(st.session_state.get("not_contains_terms", [])):
                 st.markdown(f"<span class='sidebar-badge'>{term}</span>", unsafe_allow_html=True)
-                if st.button("✕", key=f"remove_not_contains_{i}"):
-                    st.session_state.not_contains_terms.pop(i)
-                    st.rerun()
+            if st.button("Vider tous les termes à exclure", key="clear_all_not_contains"):
+                st.session_state.not_contains_terms = []
+                st.rerun()
             new_not_contains = st.text_input("Ajouter un terme à exclure :", key="new_not_contains_term")
             if st.button("Ajouter", key="add_not_contains_term") and new_not_contains.strip():
                 st.session_state.not_contains_terms.append(new_not_contains.strip())
@@ -405,9 +424,10 @@ def render_sidebar():
             st.json(st.session_state.get("metadata_filters", {}))
             st.json(st.session_state.get("where_document", {}))
             st.json(st.session_state.get("loose_filters", {}))
-# Fonctions utilitaires (inchangées)
-def apply_filter(filter_key, filter_value, is_strict):  # type: ignore
-    """Helper function to apply a filter with strict/loose setting."""
+
+# Fonctions utilitaires
+def apply_filter(filter_key, filter_value, is_strict):
+    """Applique un filtre avec strict/loose."""
     if not is_strict:
         st.session_state.active_filters[filter_key] = ChromaFilterBuilder.or_filter(
             [filter_value, ChromaFilterBuilder.eq(field=filter_key, value="")]
@@ -415,15 +435,13 @@ def apply_filter(filter_key, filter_value, is_strict):  # type: ignore
     else:
         st.session_state.active_filters[filter_key] = filter_value
 
-def clear_filter(filter_key):  # type: ignore
-    """Helper function to clear a filter if it exists."""
+def clear_filter(filter_key):
+    """Nettoie un filtre si présent."""
     if filter_key in st.session_state.active_filters:
         del st.session_state.active_filters[filter_key]
 
 def build_document_filter():
-    """
-    Build the document filter based on the current search terms and operators.
-    """
+    """Construit le filtre document selon les termes de recherche."""
     contains_terms = st.session_state.get("contains_terms", [])
     not_contains_terms = st.session_state.get("not_contains_terms", [])
 
