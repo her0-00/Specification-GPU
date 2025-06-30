@@ -1,40 +1,110 @@
 import streamlit as st
 from utils.chroma_filter_builder import ChromaFilterBuilder
 from utils.config import load_config
-
+import pandas as pd 
 # Mise en cache du chargement de la config
 @st.cache_data
 def get_config():
     return load_config()
+    
+@st.cache_data
+def load_full_data():
+    # Adapter selon le format du fichier de données complet
+    return pd.read_json("..//..//data//processed//dataset.jsonl",lines=True)
+def get_dynamic_options(df, filter_key, active_filters):
+    filtered_df = df.copy()
+    if active_filters:
+        for k, v in active_filters.items():
+            if k != filter_key and v:
+                if isinstance(v, dict):
+                    inner = v.get(k, {})
+                    for op, val in inner.items():
+                        if op == "$in":
+                            filtered_df = filtered_df[filtered_df[k].isin(val)]
+                        elif op == "$eq":
+                            filtered_df = filtered_df[filtered_df[k] == val]
+                        elif op == "$ne":
+                            filtered_df = filtered_df[filtered_df[k] != val]
+                        elif op == "$gte":
+                            filtered_df = filtered_df[filtered_df[k] >= val]
+                        elif op == "$lte":
+                            filtered_df = filtered_df[filtered_df[k] <= val]
+                        # Ajoute d'autres opérateurs si besoin
+                elif isinstance(v, list):
+                    filtered_df = filtered_df[filtered_df[k].isin(v)]
+                else:
+                    filtered_df = filtered_df[filtered_df[k] == v]
+    return sorted(filtered_df[filter_key].dropna().unique())
+
+import streamlit as st
 
 def render_sidebar():
     """
     Sidebar optimisée pour le chargement/rafraîchissement des filtres.
     """
-    # CSS pour badges/boutons
+
+    # CSS pour badges/boutons avec couleurs Safran
     st.markdown("""
-        <style>
-        .sidebar-badge {
-            background: #1976d2;
-            color: white;
-            padding: 0.2em 0.7em;
-            border-radius: 12px;
-            margin-right: 4px;
-            font-size: 0.9em;
-            display: inline-block;
-        }
-        .sidebar-reset-btn > button {
-            background-color: #e53935 !important;
-            color: white !important;
-            border-radius: 8px !important;
-            margin-top: 8px;
-        }
-        </style>
-    """, unsafe_allow_html=True)
+    <style>
+    /* Fond de la sidebar */
+    section[data-testid="stSidebar"] {
+        background-color:#00A9E0;
+        color: white;
+    }
+
+    /* Texte dans la sidebar */
+    section[data-testid="stSidebar"] * {
+        color: white !important;
+    }
+
+    /* Badges */
+    .sidebar-badge {
+        background: #FF6A13;
+        color: white;
+        padding: 0.2em 0.7em;
+        border-radius: 12px;
+        margin-right: 4px;
+        font-size: 0.9em;
+        display: inline-block;
+    }
+
+    /* Bouton de reset */
+    .sidebar-reset-btn > button {
+        background-color: #e53935 !important;
+        color: white !important;
+        border-radius: 8px !important;
+        margin-top: 8px;
+    }
+    
+    /* Appliquer un contour bleu ciel foncé aux widgets */
+    .stSelectbox div[data-baseweb="select"],
+    .stTextInput input,
+    .stMultiSelect div[data-baseweb="select"],
+    .stNumberInput input,
+    .stDateInput input {
+        border: 2px solid #1565C0 !important;
+        border-radius: 6px !important;
+        background-color: white !important;
+        color: black !important;
+    }
+
+    /* Focus (quand on clique) */
+    .stSelectbox div[data-baseweb="select"]:focus-within,
+    .stTextInput input:focus,
+    .stMultiSelect div[data-baseweb="select"]:focus-within,
+    .stNumberInput input:focus,
+    .stDateInput input:focus {
+        border: 2px solid #1976D2 !important;
+        box-shadow: 0 0 0 2px rgba(21, 101, 192, 0.3);
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+
 
     with st.sidebar:
         st.title("🛠️ Options")
-        st.markdown("Sélectionnez et combinez les filtres ci-dessous pour affiner votre recherche de documents. Utilisez la section avancée pour des critères complexes.", help="Utilisez les filtres pour ajuster la recherche.")
+        st.markdown("Sélectionnez et combinez les filtres ci-dessous pour affiner votre recherche des DA.", help="Utilisez les filtres pour ajuster la recherche.")
 
         # Chargement config (mise en cache)
         if "config" not in st.session_state:
@@ -72,13 +142,14 @@ def render_sidebar():
         )
 
         # --- Filtres Metadata ---
-        st.markdown("### 📑 Filtres métadonnées")
+        st.markdown("### Filtres")
 
         for filter_def in config.get("available_filters", []):
             filter_type = filter_def.get("type", "")
             filter_key = filter_def.get("key", "")
             filter_name = filter_def.get("name", filter_key)
-            with st.expander(f"🧑🏿{filter_name}", expanded=False):
+            df = load_full_data()
+            with st.expander(f"{filter_name}", expanded=False):
                 if filter_type =="date_range" :
                     filter_enabled = st.toggle(
                         "Activer ce filtre",
@@ -87,14 +158,7 @@ def render_sidebar():
                         disabled=st.session_state.interface_locked,
                         help="Active ou désactive ce filtre."
                     )
-                else :
-                    filter_enabled = st.toggle(
-                        "Activer ce filtre",
-                        value=True,
-                        key=f"{filter_key}_enabled",
-                        disabled=st.session_state.interface_locked,
-                        help="Active ou désactive ce filtre."
-                    )
+          
                 is_strict = st.toggle(
                     "Filtrage strict (exclure les documents sans valeur)",
                     value=True,
@@ -104,7 +168,7 @@ def render_sidebar():
                 )
                 st.session_state.loose_filters[filter_key] = not is_strict
 
-                if not filter_enabled:
+                if filter_type =="date_range" and not filter_enabled:
                     clear_filter(filter_key)
                     continue
 
@@ -219,7 +283,7 @@ def render_sidebar():
                             clear_filter(filter_key)
 
                 elif filter_type == "multiselect":
-                    options = filter_def.get("options", [])
+                    options = get_dynamic_options(df, filter_key, st.session_state.active_filters)
                     selected = st.multiselect(
                         "Options",
                         options=options,
@@ -277,7 +341,7 @@ def render_sidebar():
                         clear_filter(filter_key)
 
                 elif filter_type == "selectbox":
-                    options = filter_def.get("options", [])
+                    options = get_dynamic_options(df, filter_key, st.session_state.active_filters)
                     display_options = [""] + options
                     selected = st.selectbox(
                         "Option unique",
@@ -419,11 +483,31 @@ def render_sidebar():
         if not (st.session_state.get("active_filters") or st.session_state.get("contains_terms") or st.session_state.get("not_contains_terms")):
             st.info("Aucun filtre actif.", icon="ℹ️")
 
-        # Bloc debug/JSON
+        import json
+
         with st.expander("🛠️ Debug / JSON des filtres"):
-            st.json(st.session_state.get("metadata_filters", {}))
-            st.json(st.session_state.get("where_document", {}))
-            st.json(st.session_state.get("loose_filters", {}))
+            def render_json_block(title, data):
+                st.markdown(f"**{title}**", unsafe_allow_html=True)
+                st.markdown(f"""
+                    <div style="
+                        background-color: black;
+                        color: white;
+                        border: 2px solid #00205B;
+                        border-radius: 8px;
+                        padding: 15px;
+                        margin-bottom: 15px;
+                        font-family: 'Courier New', monospace;
+                        white-space: pre-wrap;
+                    ">
+                        {json.dumps(data, indent=2)}
+                    </div>
+                """, unsafe_allow_html=True)
+
+            render_json_block("🎯 metadata_filters", st.session_state.get("metadata_filters", {}))
+            render_json_block("📄 where_document", st.session_state.get("where_document", {}))
+            render_json_block("🧩 loose_filters", st.session_state.get("loose_filters", {}))
+
+
 
 # Fonctions utilitaires
 def apply_filter(filter_key, filter_value, is_strict):
