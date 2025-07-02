@@ -1,526 +1,204 @@
 import streamlit as st
-from utils.chroma_filter_builder import ChromaFilterBuilder
+from components.conversation import clear_conversation, render_conversation, afficher_dataframe_dataset
+from components.message_input import render_message_input
+from components.sidebar  import render_sidebar
+
 from utils.config import load_config
-import pandas as pd
-import json
 
-@st.cache_data
-def get_config():
-    return load_config()
+def main():
+    st.set_page_config(
+        page_title="DA",
+        page_icon="🤖",
+        layout="wide",
+    )
 
-@st.cache_data
-def load_full_data():
-    return pd.read_json("..//..//data//processed//dataset.jsonl", lines=True)
-
-def get_linked_options(df, filter_key, active_filters, current_selection):
-    # Applique tous les filtres sauf celui courant
-    filtered_df = df.copy()
-    for k, v in active_filters.items():
-        if k == filter_key or not v:
-            continue
-        # Ici, applique la logique de ton get_dynamic_options (simplifiée)
-        if isinstance(v, dict):
-            inner = v.get(k, {})
-            for op, val in inner.items():
-                if op == "$in":
-                    filtered_df = filtered_df[filtered_df[k].isin(val)]
-                elif op == "$eq":
-                    filtered_df = filtered_df[filtered_df[k] == val]
-                elif op == "$ne":
-                    filtered_df = filtered_df[filtered_df[k] != val]
-                elif op == "$gte":
-                    filtered_df = filtered_df[filtered_df[k] >= val]
-                elif op == "$lte":
-                    filtered_df = filtered_df[filtered_df[k] <= val]
-        elif isinstance(v, list):
-            filtered_df = filtered_df[filtered_df[k].isin(v)]
-        else:
-            filtered_df = filtered_df[filtered_df[k] == v]
-    options = set(filtered_df[filter_key].dropna().unique())
-    # Ajoute la sélection courante pour la préserver même si filtrée
-    options.update(current_selection)
-    return sorted(options)
-
-def render_sidebar():
+    # 🎨 Thème Safran + CSS personnalisé
     st.markdown("""
     <style>
-    section[data-testid="stSidebar"] {background-color:#00A9E0; color: white;}
-    section[data-testid="stSidebar"] * {color: white !important;}
-    .sidebar-badge {background: #FF6A13; color: white; padding: 0.2em 0.7em; border-radius: 12px; margin-right: 4px; font-size: 0.9em; display: inline-block;}
-    .sidebar-reset-btn > button {background-color: #e53935 !important; color: white !important; border-radius: 8px !important; margin-top: 8px;}
-    .stSelectbox div[data-baseweb="select"], .stTextInput input, .stMultiSelect div[data-baseweb="select"], .stNumberInput input, .stDateInput input {border: 2px solid #1565C0 !important; border-radius: 6px !important; background-color: white !important; color: black !important;}
-    .stSelectbox div[data-baseweb="select"]:focus-within, .stTextInput input:focus, .stMultiSelect div[data-baseweb="select"]:focus-within, .stNumberInput input:focus, .stDateInput input:focus {border: 2px solid #1976D2 !important; box-shadow: 0 0 0 2px rgba(21, 101, 192, 0.3);}
+    /* Fond général */
+    .stApp {
+        background-color: #F4F4F4;
+        color: #1C1C1C;
+        font-family: "Segoe UI", sans-serif;
+    }
+
+    /* Titres */
+    h1, h2, h3, h4 {
+        color: #00205B;
+        font-weight: 600;
+    }
+
+    /* Blocs principaux */
+    .block-container > div {
+        border: 1px solid #D0D0D0;
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 25px;
+        background-color: white;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    }
+
+    /* Boutons */
+    .stButton>button {
+        background-color: #FF6A13;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        padding: 0.5em 1em;
+        font-weight: bold;
+    }
+
+    .stButton>button:hover {
+        background-color: #e65c00;
+    }
+
+    /* Widgets (selectbox, input, etc.) */
+    .stSelectbox div[data-baseweb="select"],
+    .stTextInput input,
+    .stMultiSelect div[data-baseweb="select"],
+    .stNumberInput input,
+    .stDateInput input {
+        border: 2px solid #1976D2 !important;
+        border-radius: 6px !important;
+        background-color: white !important;
+        color: #1C1C1C !important;
+    }
+
+    .stSelectbox div[data-baseweb="select"]:focus-within,
+    .stTextInput input:focus,
+    .stMultiSelect div[data-baseweb="select"]:focus-within,
+    .stNumberInput input:focus,
+    .stDateInput input:focus {
+        border: 2px solid #00205B !important;
+        box-shadow: 0 0 0 2px rgba(0,32,91,0.2);
+    }
+
+    /* Sidebar */
+    section[data-testid="stSidebar"] {
+        background-color: #00A9E0;
+        color: white;
+    }
+
+    section[data-testid="stSidebar"] * {
+        color: white !important;
+    }
+
+    /* Badges */
+    .sidebar-badge {
+        background: #FF6A13;
+        color: white;
+        padding: 0.2em 0.7em;
+        border-radius: 12px;
+        margin-right: 4px;
+        font-size: 0.9em;
+        display: inline-block;
+    }
+
+    /* Bouton reset dans la sidebar */
+    .sidebar-reset-btn > button {
+        background-color: #e53935 !important;
+        color: white !important;
+        border-radius: 8px !important;
+        margin-top: 8px;
+    }
     </style>
+""", unsafe_allow_html=True)
+
+
+    load_config()
+
+    # Initialisation des variables de session
+    for key, default in {
+        "messages": [],
+        "messages_llm": [],
+        "filters": [],
+        "interface_locked": False,
+        "processing_query": False,
+        "needs_processing": False,
+        "query_to_process": "",
+        "current_query_type": "Specific Question"
+    }.items():
+        if key not in st.session_state:
+            st.session_state[key] = default
+
+  
+    # Titre principal
+    st.markdown("<h1 style='text-align: center;'> Solution d'aide à la décision dans le traitement des DA</h1>", unsafe_allow_html=True)
+    
+
+    
+
+    # Section 1 : Données disponibles
+    #st.markdown("### 📊 Données disponibles")
+    #afficher_dataframe_dataset()
+
+    # Section 2 : 💬 Interaction utilisateur
+    st.markdown("### 💬 Recherche")
+    render_conversation()
+   
+
+ 
+
+    # Zone de saisie utilisateur
+    render_message_input()
+
+  
+    # Bouton pour réinitialiser la conversation
+    _, col2, _ = st.columns([1, 1, 1])
+    with col2:
+        if st.button("🧹 Effacer l'historique", use_container_width=True, disabled=st.session_state.interface_locked):
+            clear_conversation()
+            
+    # Overlay si interface verrouillée
+    if st.session_state.interface_locked:
+        st.markdown(
+            """
+            <div class="overlay">
+                <div class="overlay-content">
+                    <h3>⏳ Traitement en cours</h3>
+                    <p>Merci de patienter pendant le traitement de votre requête...</p>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+  # Section 0 : À quoi sert cet outil ?
+    st.markdown("### 🎯 Objectifs de l’outil")
+
+    st.markdown("""
+    <div style="
+        background-color: white;
+        border: 2px solid #00205B;
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 25px;
+        color: black;
+        font-family: 'Segoe UI', sans-serif;
+    ">
+        <p>
+            Cet outil a été conçu pour <strong>faciliter l’analyse et le traitement des Déclarations d’Anomalie (DA)</strong> 
+            en capitalisant sur l’historique des cas rencontrés depuis <strong>2020</strong>.
+        </p>
+        <ul>
+            <li>🔍 <strong>Retrouver rapidement des cas similaires</strong> à une anomalie en cours, à partir d’une description ou d’un mot-clé.</li>
+            <li>🧠 <strong>S’inspirer des résolutions passées</strong> pour accélérer le diagnostic et la prise de décision.</li>
+            <li>🗂️ <strong>Explorer l’historique des DA</strong> via une base de données enrichie et filtrable.</li>
+            <li>🧭 <strong>Affiner les recherches</strong> grâce aux filtres disponibles(programme, ligne, dates, etc.).</li>
+            <li>✏️ <strong>Interroger l’outil librement</strong> en saisissant une description ou un mot-clé du défaut.</li>
+        </ul>
+        <p>
+            En résumé, cette solution d’aide à la décision vise à <strong>réduire les délais d’analyse</strong>.
+        </p>
+    </div>
     """, unsafe_allow_html=True)
+   
 
-    with st.sidebar:
-        st.title("🛠️ Options")
-        st.markdown("Sélectionnez et combinez les filtres ci-dessous pour affiner votre recherche des DA.", help="Utilisez les filtres pour ajuster la recherche.")
 
-        if "config" not in st.session_state:
-            st.session_state.config = get_config()
-        config = st.session_state.config
+    # Rafraîchissement si déverrouillage
+    if st.session_state.get("_previous_lock_state", False) and not st.session_state.interface_locked:
+        st.session_state._previous_lock_state = False
+        st.rerun()
+    st.session_state._previous_lock_state = st.session_state.interface_locked
 
-        # Initialisation rapide du state
-        for k, v in [
-            ("active_filters", {}),
-            ("loose_filters", {}),
-            ("document_filters", {"contains": [], "not_contains": []}),
-            ("contains_terms", []),
-            ("not_contains_terms", []),
-            ("interface_locked", False)
-        ]:
-            st.session_state.setdefault(k, v)
-
-        if st.button("♻️ Réinitialiser tous les filtres", key="reset_all", help="Enlève tous les filtres actifs", type="primary"):
-            for k in [
-                "active_filters", "loose_filters",
-                "document_filters", "contains_terms",
-                "not_contains_terms", "where_document", "metadata_filters"
-            ]:
-                st.session_state[k] = {} if isinstance(st.session_state[k], dict) else []
-            st.rerun()
-
-        st.subheader("🔗 Combinaison de filtres")
-        filter_grouping = st.radio(
-            "Méthode de groupement",
-            ["AND", "OR"],
-            horizontal=True,
-            key="filter_grouping",
-            disabled=st.session_state.interface_locked
-        )
-
-        st.markdown("### Filtres")
-        df = load_full_data()
-
-        for filter_def in config.get("available_filters", []):
-            filter_type = filter_def.get("type", "")
-            filter_key = filter_def.get("key", "")
-            filter_name = filter_def.get("name", filter_key)
-
-            with st.expander(f"{filter_name}", expanded=False):
-
-                # Gestion du strict/loose
-                is_strict = st.toggle(
-                    "Filtrage strict (exclure les documents sans valeur)",
-                    value=True,
-                    key=f"{filter_key}_strict",
-                    help="Si désactivé, les documents sans cette valeur seront inclus.",
-                    disabled=st.session_state.interface_locked
-                )
-                st.session_state.loose_filters[filter_key] = not is_strict
-
-                # --- Date Range ---
-                if filter_type == "date_range":
-                    filter_enabled = st.toggle(
-                        "Activer ce filtre",
-                        value=False,
-                        key=f"{filter_key}_enabled",
-                        disabled=st.session_state.interface_locked,
-                        help="Active ou désactive ce filtre."
-                    )
-                    if not filter_enabled:
-                        clear_filter(filter_key)
-                        continue
-                    date_filter_type = st.radio(
-                        "Type de filtre de date",
-                        ["Range", "Before", "After", "Exact"],
-                        horizontal=True,
-                        key=f"{filter_key}_filter_type",
-                        help="Choisissez le type de critère temporel à appliquer.",
-                        disabled=st.session_state.interface_locked
-                    )
-                    operator_start = "$gte"
-                    operator_end = "$lt"
-
-                    if date_filter_type == "Range":
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            start_date = st.date_input(
-                                "De",
-                                key=f"{filter_key}_start",
-                                disabled=st.session_state.interface_locked,
-                            )
-                            include_start = st.checkbox(
-                                "Inclure cette date",
-                                value=True,
-                                key=f"{filter_key}_include_start",
-                                disabled=st.session_state.interface_locked,
-                            )
-                            operator_start = "$gte" if include_start else "$gt"
-                        with col2:
-                            end_date = st.date_input(
-                                "À",
-                                key=f"{filter_key}_end",
-                                disabled=st.session_state.interface_locked,
-                            )
-                            include_end = st.checkbox(
-                                "Inclure cette date",
-                                value=False,
-                                key=f"{filter_key}_include_end",
-                                disabled=st.session_state.interface_locked,
-                            )
-                            operator_end = "$lte" if include_end else "$lt"
-                        if start_date and end_date:
-                            date_filter = ChromaFilterBuilder.date_range(
-                                field=filter_key,
-                                start_date=start_date,
-                                end_date=end_date,
-                                operator_start=operator_start,
-                                operator_end=operator_end,
-                            )
-                            apply_filter(filter_key, date_filter, is_strict)
-                        else:
-                            clear_filter(filter_key)
-                    elif date_filter_type == "Before":
-                        end_date = st.date_input(
-                            "Avant la date",
-                            key=f"{filter_key}_before",
-                            disabled=st.session_state.interface_locked,
-                        )
-                        include_end = st.checkbox(
-                            "Inclure cette date",
-                            value=False,
-                            key=f"{filter_key}_include_before",
-                            disabled=st.session_state.interface_locked,
-                        )
-                        operator_end = "$lte" if include_end else "$lt"
-                        if end_date:
-                            date_filter = ChromaFilterBuilder.date_range(
-                                field=filter_key,
-                                end_date=end_date,
-                                operator_end=operator_end,
-                            )
-                            apply_filter(filter_key, date_filter, is_strict)
-                        else:
-                            clear_filter(filter_key)
-                    elif date_filter_type == "After":
-                        start_date = st.date_input(
-                            "Après la date",
-                            key=f"{filter_key}_after",
-                            disabled=st.session_state.interface_locked,
-                        )
-                        include_start = st.checkbox(
-                            "Inclure cette date",
-                            value=True,
-                            key=f"{filter_key}_include_after",
-                            disabled=st.session_state.interface_locked,
-                        )
-                        operator_start = "$gte" if include_start else "$gt"
-                        if start_date:
-                            date_filter = ChromaFilterBuilder.date_range(
-                                field=filter_key,
-                                start_date=start_date,
-                                operator_start=operator_start,
-                            )
-                            apply_filter(filter_key, date_filter, is_strict)
-                        else:
-                            clear_filter(filter_key)
-                    elif date_filter_type == "Exact":
-                        exact_date = st.date_input(
-                            "Date exacte",
-                            key=f"{filter_key}_exact",
-                            disabled=st.session_state.interface_locked,
-                        )
-                        if exact_date:
-                            date_str = exact_date.isoformat()
-                            date_filter = ChromaFilterBuilder.eq(
-                                field=filter_key, value=date_str
-                            )
-                            apply_filter(filter_key, date_filter, is_strict)
-                        else:
-                            clear_filter(filter_key)
-
-                elif filter_type == "multiselect":
-                    current_selection = st.session_state.get(f"{filter_key}_select", [])
-                    options = get_linked_options(df, filter_key, st.session_state.active_filters, current_selection)
-                    selected = st.multiselect(
-                        "Options",
-                        options=options,
-                        default=current_selection,
-                        key=f"{filter_key}_select",
-                        help="Sélectionnez une ou plusieurs valeurs.",
-                        disabled=st.session_state.interface_locked
-                    )
-                    filter_mode = st.radio(
-                        "Mode de filtre",
-                        ["Inclure la sélection", "Exclure la sélection"],
-                        horizontal=True,
-                        key=f"{filter_key}_mode",
-                        disabled=st.session_state.interface_locked,
-                    )
-                    inner_operator = st.radio(
-                        "Opérateur",
-                        ["OU (au moins 1)", "ET (toutes)"],
-                        horizontal=True,
-                        key=f"{filter_key}_operator",
-                        disabled=st.session_state.interface_locked,
-                    )
-                    if selected:
-                        if filter_mode == "Inclure la sélection":
-                            if inner_operator.startswith("OU"):
-                                multiselect_filter = ChromaFilterBuilder.in_list(
-                                    field=filter_key, values=selected
-                                )
-                            else:
-                                conditions = [
-                                    ChromaFilterBuilder.eq(
-                                        field=filter_key, value=value
-                                    )
-                                    for value in selected
-                                ]
-                                multiselect_filter = ChromaFilterBuilder.and_filter(
-                                    conditions=conditions
-                                )
-                        else:  # Exclure
-                            if inner_operator.startswith("OU"):
-                                multiselect_filter = ChromaFilterBuilder.not_in_list(
-                                    field=filter_key, values=selected
-                                )
-                            else:
-                                conditions = [
-                                    ChromaFilterBuilder.ne(
-                                        field=filter_key, value=value
-                                    )
-                                    for value in selected
-                                ]
-                                multiselect_filter = ChromaFilterBuilder.and_filter(
-                                    conditions=conditions
-                                )
-                        apply_filter(filter_key, multiselect_filter, is_strict)
-                    else:
-                        clear_filter(filter_key)
-
-                elif filter_type == "selectbox":
-                    current_selection = st.session_state.get(f"{filter_key}_select", "")
-                    options = get_linked_options(df, filter_key, st.session_state.active_filters, [current_selection] if current_selection else [])
-                    display_options = [""] + options
-                    selected = st.selectbox(
-                        "Option unique",
-                        options=display_options,
-                        index=display_options.index(current_selection) if current_selection in display_options else 0,
-                        key=f"{filter_key}_select",
-                        help="Sélectionnez une valeur unique.",
-                        disabled=st.session_state.interface_locked
-                    )
-                    filter_mode = st.radio(
-                        "Mode de filtre",
-                        ["Égal à la sélection", "Différent de la sélection"],
-                        horizontal=True,
-                        key=f"{filter_key}_mode",
-                        disabled=st.session_state.interface_locked,
-                    )
-                    if selected:
-                        if filter_mode == "Égal à la sélection":
-                            selectbox_filter = ChromaFilterBuilder.eq(
-                                field=filter_key, value=selected
-                            )
-                        else:
-                            selectbox_filter = ChromaFilterBuilder.ne(
-                                field=filter_key, value=selected
-                            )
-                        apply_filter(filter_key, selectbox_filter, is_strict)
-                    else:
-                        clear_filter(filter_key)
-
-                elif filter_type == "text":
-                    text_value = st.text_input(
-                        "Valeur texte",
-                        key=f"{filter_key}_text",
-                        help="Saisissez une valeur pour filtrer par texte.",
-                        disabled=st.session_state.interface_locked
-                    )
-                    comparison_operator = st.selectbox(
-                        "Opérateur",
-                        ["Equals", "Not equals", "Contains", "Does not contain"],
-                        key=f"{filter_key}_comparison",
-                        disabled=st.session_state.interface_locked
-                    )
-                    if text_value:
-                        if comparison_operator == "Equals":
-                            text_filter = ChromaFilterBuilder.eq(
-                                field=filter_key, value=text_value
-                            )
-                        elif comparison_operator == "Not equals":
-                            text_filter = ChromaFilterBuilder.ne(
-                                field=filter_key, value=text_value
-                            )
-                        elif comparison_operator == "Contains":
-                            text_filter = {filter_key: {"$contains": text_value}}
-                        elif comparison_operator == "Does not contain":
-                            text_filter = {filter_key: {"$not_contains": text_value}}
-                        apply_filter(filter_key, text_filter, is_strict)
-                    else:
-                        clear_filter(filter_key)
-
-        # Recherche plein texte (inchangé)
-        st.markdown("### 🔍 Recherche plein texte")
-        with st.expander("Contient les termes…", expanded=False):
-            for term in st.session_state.get("contains_terms", []):
-                st.markdown(f"<span class='sidebar-badge'>{term}</span>", unsafe_allow_html=True)
-            if st.button("Vider tous les termes à contenir", key="clear_all_contains"):
-                st.session_state.contains_terms = []
-                st.rerun()
-            new_contains = st.text_input("Ajouter un terme à contenir :", key="new_contains_term")
-            if st.button("Ajouter", key="add_contains_term") and new_contains.strip():
-                st.session_state.contains_terms.append(new_contains.strip())
-                st.rerun()
-            if len(st.session_state.contains_terms) > 1:
-                st.radio(
-                    "Combinaison des termes",
-                    ["AND (tous présents)", "OR (au moins 1 présent)"],
-                    key="contains_operator",
-                    disabled=st.session_state.interface_locked
-                )
-        with st.expander("…Ne contient PAS les termes", expanded=False):
-            for term in st.session_state.get("not_contains_terms", []):
-                st.markdown(f"<span class='sidebar-badge'>{term}</span>", unsafe_allow_html=True)
-            if st.button("Vider tous les termes à exclure", key="clear_all_not_contains"):
-                st.session_state.not_contains_terms = []
-                st.rerun()
-            new_not_contains = st.text_input("Ajouter un terme à exclure :", key="new_not_contains_term")
-            if st.button("Ajouter", key="add_not_contains_term") and new_not_contains.strip():
-                st.session_state.not_contains_terms.append(new_not_contains.strip())
-                st.rerun()
-            if len(st.session_state.not_contains_terms) > 1:
-                st.radio(
-                    "Combinaison des termes",
-                    ["AND (aucun ne doit être présent)", "OR (au moins 1 absent)"],
-                    key="not_contains_operator",
-                    disabled=st.session_state.interface_locked
-                )
-        if st.session_state.contains_terms and st.session_state.not_contains_terms:
-            st.radio(
-                "Combiner 'contient' et 'ne contient pas' :",
-                ["AND (les deux conditions)", "OR (au moins une)"],
-                key="doc_filter_top_operator",
-                disabled=st.session_state.interface_locked
-            )
-
-        build_document_filter()
-
-        # Combine metadata filters
-        if st.session_state.active_filters:
-            combined_filters = list(st.session_state.active_filters.values())
-            if len(combined_filters) > 1:
-                if filter_grouping == "AND":
-                    complex_filter = ChromaFilterBuilder.and_filter(
-                        conditions=combined_filters
-                    )
-                else:
-                    complex_filter = ChromaFilterBuilder.or_filter(
-                        conditions=combined_filters
-                    )
-            else:
-                complex_filter = combined_filters[0]
-            st.session_state.metadata_filters = complex_filter
-        else:
-            st.session_state.metadata_filters = None
-
-        # Résumé filtres actifs
-        st.markdown("### 🧾 Filtres actifs")
-        if st.session_state.get("active_filters"):
-            st.markdown("**Métadonnées**")
-            for k in st.session_state.active_filters:
-                st.markdown(f"<span class='sidebar-badge'>{k}</span>", unsafe_allow_html=True)
-        if st.session_state.get("contains_terms"):
-            st.markdown("**Texte contient**")
-            for t in st.session_state.contains_terms:
-                st.markdown(f"<span class='sidebar-badge'>{t}</span>", unsafe_allow_html=True)
-        if st.session_state.get("not_contains_terms"):
-            st.markdown("**Texte exclut**")
-            for t in st.session_state.not_contains_terms:
-                st.markdown(f"<span class='sidebar-badge'>{t}</span>", unsafe_allow_html=True)
-        if not (st.session_state.get("active_filters") or st.session_state.get("contains_terms") or st.session_state.get("not_contains_terms")):
-            st.info("Aucun filtre actif.", icon="ℹ️")
-
-        with st.expander("🛠️ Debug / JSON des filtres"):
-            def render_json_block(title, data):
-                st.markdown(f"**{title}**", unsafe_allow_html=True)
-                st.markdown(f"""
-                    <div style="
-                        background-color: black;
-                        color: white;
-                        border: 2px solid #00205B;
-                        border-radius: 8px;
-                        padding: 15px;
-                        margin-bottom: 15px;
-                        font-family: 'Courier New', monospace;
-                        white-space: pre-wrap;
-                    ">
-                        {json.dumps(data, indent=2)}
-                    </div>
-                """, unsafe_allow_html=True)
-
-            render_json_block("🎯 metadata_filters", st.session_state.get("metadata_filters", {}))
-            render_json_block("📄 where_document", st.session_state.get("where_document", {}))
-            render_json_block("🧩 loose_filters", st.session_state.get("loose_filters", {}))
-
-def apply_filter(filter_key, filter_value, is_strict):
-    if not is_strict:
-        st.session_state.active_filters[filter_key] = ChromaFilterBuilder.or_filter(
-            [filter_value, ChromaFilterBuilder.eq(field=filter_key, value="")]
-        )
-    else:
-        st.session_state.active_filters[filter_key] = filter_value
-
-def clear_filter(filter_key):
-    if filter_key in st.session_state.active_filters:
-        del st.session_state.active_filters[filter_key]
-
-def build_document_filter():
-    contains_terms = st.session_state.get("contains_terms", [])
-    not_contains_terms = st.session_state.get("not_contains_terms", [])
-
-    if not contains_terms and not not_contains_terms:
-        st.session_state.where_document = None
-        return
-
-    contains_filter = None
-    if contains_terms:
-        if len(contains_terms) == 1:
-            contains_filter = {"$contains": contains_terms[0]}
-        else:
-            contains_operator = st.session_state.get(
-                "contains_operator", "AND (tous présents)"
-            )
-            if contains_operator.startswith("AND"):
-                contains_filter = {
-                    "$and": [{"$contains": term} for term in contains_terms]
-                }
-            else:
-                contains_filter = {
-                    "$or": [{"$contains": term} for term in contains_terms]
-                }
-    not_contains_filter = None
-    if not_contains_terms:
-        if len(not_contains_terms) == 1:
-            not_contains_filter = {"$not_contains": not_contains_terms[0]}
-        else:
-            not_contains_operator = st.session_state.get(
-                "not_contains_operator", "AND (aucun ne doit être présent)"
-            )
-            if not_contains_operator.startswith("AND"):
-                not_contains_filter = {
-                    "$and": [{"$not_contains": term} for term in not_contains_terms]
-                }
-            else:
-                not_contains_filter = {
-                    "$or": [{"$not_contains": term} for term in not_contains_terms]
-                }
-    if contains_filter and not_contains_filter:
-        doc_filter_top_operator = st.session_state.get(
-            "doc_filter_top_operator", "AND (les deux conditions)"
-        )
-        if doc_filter_top_operator.startswith("AND"):
-            st.session_state.where_document = {
-                "$and": [contains_filter, not_contains_filter]
-            }
-        else:
-            st.session_state.where_document = {
-                "$or": [contains_filter, not_contains_filter]
-            }
-    elif contains_filter:
-        st.session_state.where_document = contains_filter
-    elif not_contains_filter:
-        st.session_state.where_document = not_contains_filter
+if __name__ == "__main__":
+    main()
