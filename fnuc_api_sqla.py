@@ -1,477 +1,427 @@
-import streamlit as st
-from utils.chroma_filter_builder import ChromaFilterBuilder
-from utils.config import load_config
-import pandas as pd
+import ast
+import base64
 import json
+from io import BytesIO
+from typing import Any, Dict
 
-@st.cache_data
-def get_config():
-    return load_config()
+import numpy as np
+import pandas as pd
+import streamlit as st
+from PIL import Image
+from st_aggrid import (
+    AgGrid,
+    DataReturnMode,
+    GridOptionsBuilder,
+    GridUpdateMode
+)
 
-@st.cache_data
-def load_full_data():
-    return pd.read_json("..//..//data//processed//dataset.jsonl", lines=True)
+def convert_timestamps_to_iso(df):
+    for column in df.columns:
+        if "Date" in column:
+            df[column] = pd.to_datetime(df[column], unit='ms').dt.strftime('%Y-%m-%d')
+    return df
 
-def get_linked_options(df, filter_key, active_filters, current_selection):
-    filtered_df = df.copy()
-    for k, v in active_filters.items():
-        if k == filter_key or not v:
-            continue
-        if isinstance(v, dict):
-            inner = v.get(k, {})
-            for op, val in inner.items():
-                if op == "$in":
-                    filtered_df = filtered_df[filtered_df[k].isin(val)]
-                elif op == "$eq":
-                    filtered_df = filtered_df[filtered_df[k] == val]
-                elif op == "$ne":
-                    filtered_df = filtered_df[filtered_df[k] != val]
-                elif op == "$gte":
-                    filtered_df = filtered_df[filtered_df[k] >= val]
-                elif op == "$lte":
-                    filtered_df = filtered_df[filtered_df[k] <= val]
-        elif isinstance(v, list):
-            filtered_df = filtered_df[filtered_df[k].isin(v)]
+def create_and_display_grid(
+    context_data: str,
+    key_suffix: str,
+    min_height: int = 400,
+    max_height: int = 400,
+    page_size: int = 20,
+    content_col_name: str = "Content",
+    font_size: int = 9,
+) -> Dict[str, Any]:
+    if not context_data or (
+        isinstance(context_data, str)
+        and context_data.strip().lower() in ["", "null", "none"]
+    ):
+        st.markdown("No data to display.")
+        return {}
+
+    try:
+        if isinstance(context_data, str):
+            try:
+                cleaned_data = context_data.replace("'", '"')
+                data = json.loads(cleaned_data)
+            except Exception:
+                data = ast.literal_eval(context_data)
         else:
-            filtered_df = filtered_df[filtered_df[k] == v]
-    options = set(filtered_df[filter_key].dropna().unique())
-    options.update(current_selection)
-    return sorted(options)
+            data = context_data
+    except Exception as e:
+        st.error(f"Error evaluating context_data: {e}")
+        st.error(
+            f"Raw data: {context_data[:200]}..."
+            if isinstance(context_data, str)
+            else "Non-string data"
+        )
+        return {}
 
-def render_horizontal_filters():
-  
-    if "config" not in st.session_state:
-        st.session_state.config = get_config()
-    config = st.session_state.config
-    if st.toggle("##### 🛠️ Filtres disponibles", value=False):
-        col1, col2 = st.columns([2, 3])
-        # Colonnes avec alignement vertical centré
-        if "active_filters" not in st.session_state:
-            st.session_state.active_filters = {}
-
-        if st.toggle("#### Retouche existante", key="da_not_null_btn", value=False):
-            da_not_null_filter = ChromaFilterBuilder.is_not_null(field="Code DA_DER")
-            st.session_state.active_filters["Code DA_DER"] = da_not_null_filter
-        else:
-            st.session_state.active_filters.pop("Code DA_DER", None)
-        with col1:
-            st.markdown(
-                "<div style='display: flex; align-items: center; height: 100%;'>"
-                "<span style='font-weight: 600; font-size: 16px;'>Méthode de regroupement</span>"
-                "</div>",
-                unsafe_allow_html=True
-            )
-
-        with col2:
-            filter_grouping = st.radio(
-                label="",
-                options=["AND", "OR"],
-                horizontal=True,
-                key="filter_grouping",
-                disabled=st.session_state.get("interface_locked", False)
-            )
+    try:
+        df = pd.DataFrame.from_dict(data)
+        try:
+            df = convert_timestamps_to_iso(df)
+        except Exception:
+            pass
+        try:
+            if 'relevance_score' in df.columns:
+                df['relevance_score'] = (df['relevance_score'].astype(float) * 100).round(2).astype(str) + '%'
+                df = df.rename(columns={"Operateur responsable": "OP"})
+                df = df.rename(columns={"relevance_score": "Score"})
+        except Exception:
+            pass
+        fixed_order = [
+            'Code DA',
+            'OP',
+            'Score',
+            'Similarité',
+            'Code article',
+            'Libelle article',
+            'Content'
+        ]
         
+        remaining_cols = sorted([col for col in df.columns if col not in fixed_order])
+        if 'Score' in df.columns and (df['Score'] == '').any():
+            cols = list(df.columns)
+            cols.remove("Score")
+            df = df[cols]
+        final_order = fixed_order + remaining_cols
+        df = df[[col for col in final_order if col in df.columns]]
+    except Exception as e:
+        st.error(f"Error creating DataFrame: {e}")
+        st.json(data)
+        return {}
 
-        for k, v in [
-            ("active_filters", {}),
-            ("loose_filters", {}),
-            ("document_filters", {"contains": [], "not_contains": []}),
-            ("contains_terms", []),
-            ("not_contains_terms", []),
-            ("interface_locked", False)
-        ]:
-            st.session_state.setdefault(k, v)
+    has_table_dict = "table_dict" in df.columns
+    has_image_array = "image_array" in df.columns
+    df["_row_index"] = range(len(df))
 
-        df = load_full_data()
-        filter_defs = config.get("available_filters", [])
-        n_cols = min(5, len(filter_defs)) or 1
-        cols = st.columns(n_cols)
+    grid_container = st.container()
+
+    with grid_container:
+        grid_col, details_col = st.columns([40, 1])
+        with grid_col:
+            row_count = len(df)
+            estimated_height = min(max(row_count * 60 + 100, min_height), max_height)
+            if row_count > page_size:
+                visible_rows = min(page_size, row_count)
+                estimated_height = min(visible_rows * 60 + 100, max_height)
+                
+                      
+            # Fonction pour créer une barre de progression textuelle
+            def render_bar(val, length=10):
+                try:
+                    val = float(val.strip('%')) / 100  # Convertir "85%" → 0.85
+                except:
+                    return "░" * length
+                filled = int(val * length)
+                empty = length - filled
+                return "█" * filled + "░" * empty
+
+            # Appliquer la barre de progression dans une nouvelle colonne
+            try:
+                df['Similarité'] = df['Score'].apply(render_bar)
+                # Réorganiser les colonnes pour placer 'Similarité' en 3ᵉ position
+                cols = list(df.columns)
+                if 'Similarité' in cols:
+                    cols.remove('Similarité')
+                    cols.insert(3, 'Similarité')
+                    df = df[cols]
+            except Exception as e:
+                print("Erreur lors de la génération de la barre :", e)
 
 
-        # Filtres horizontaux dans expanders
-        for i, filter_def in enumerate(filter_defs):
-            filter_type = filter_def.get("type", "")
-            filter_key = filter_def.get("key", "")
-            filter_name = filter_def.get("name", filter_key)
-            with cols[i % n_cols]:
-                with st.expander(filter_name, expanded=False):  # Rabattu par défaut
-                    is_strict = st.toggle(
-                        "Strict",
-                        value=True,
-                        key=f"{filter_key}_strict",
-                        help="Si désactivé, les documents sans cette valeur seront inclus.",
-                        disabled=st.session_state.interface_locked
+
+            gb = GridOptionsBuilder.from_dataframe(df)
+
+            cell_style = {
+                "font-size": f"{font_size}px",
+                "line-height": f"{int(font_size * 1.2)}px",
+                "padding": "4px",
+            }
+
+            gb.configure_selection("single", use_checkbox=True)
+            if has_table_dict:
+                gb.configure_column("table_dict", hide=True)
+            if has_image_array:
+                gb.configure_column("image_array", hide=True)
+            gb.configure_column("_row_index", hide=True)
+
+            for col in df.columns:
+                if col in ["table_dict", "image_array", "_row_index"]:
+                    continue
+                elif col == "Score":
+                    gb.configure_column(
+                        col,
+                        autoSizeColumn=True,
+                        minWidth=80,
+                        maxWidth=150,
+                        cellRenderer="""
+                            function(params) {
+                                const val = params.value || '';
+                                let score = 0;
+                                if(val.includes('%')) {score = parseFloat(val.replace('%',''));}
+                                else {score = parseFloat(val);}
+                                let color = '#ff4136';
+                                if(score >= 70) color = '#2ecc40';
+                                else if(score >= 40) color = '#ffae42';
+                                return `<span style='font-size:18px; color:${color}; vertical-align:middle;'>●</span>
+                                        <span style='color:${color}; font-weight:bold;'>${val}</span>`;
+                            }
+                        """,
+                        filter=True,
+                        cellStyle={"fontWeight": "bold", "fontSize": "13px"}
                     )
-                    st.session_state.loose_filters[filter_key] = not is_strict
-
-                    if filter_type == "date_range":
-                        filter_enabled = st.toggle(
-                            "Activer",
-                            value=False,
-                            key=f"{filter_key}_enabled",
-                            disabled=st.session_state.interface_locked
+                elif col == "Similarité":
+                    gb.configure_column(
+                        col,
+                        autoSizeColumn=True,
+                        minWidth=100,
+                        maxWidth=150,
+                        cellStyle={"fontWeight": "bold", "color": "#3f51b5", "fontSize": "12px"},
+                        filter=True
+                    )
+                elif col == "Libelle article" :
+                    gb.configure_column(
+                        col,
+                        minWidth=200,
+                        maxWidth=220,
+                        autoSizeColumn=True,
+                        cellStyle={"fontWeight": "bold", "fontSize": "11.5px"},
+                        filter=True
+                    )
+                    
+                elif col  == "retouche_description_methodes":
+                    gb.configure_column(
+                        col,
+                        minWidth=220,
+                        maxWidth=260,
+                        autoSizeColumn=True,
+                        cellStyle={"fontWeight": "bold", "fontSize": "11.5px"},
+                        filter=True
+                    )
+                    
+                elif col  == "retouche_type_description":
+                    gb.configure_column(
+                        col,
+                        minWidth=220,
+                        maxWidth=260,
+                        autoSizeColumn=True,
+                        cellStyle={"fontWeight": "bold", "fontSize": "11.5px"},
+                        filter=True
+                    )
+                elif col =="OP":
+                    gb.configure_column(
+                            col,
+                            minWidth=80,
+                            maxWidth=120,
+                            autoSizeColumn=True,
+                            cellStyle={"fontWeight": "bold", "fontSize": "11.5px"},
+                            filter=True
                         )
-                        if not filter_enabled:
-                            clear_filter(filter_key)
-                            continue
-                        date_filter_type = st.radio(
-                            "Type",
-                            ["Range", "Before", "After", "Exact"],
-                            horizontal=True,
-                            key=f"{filter_key}_filter_type",
-                            disabled=st.session_state.interface_locked
+                        
+                elif col in ["Code DA","Code article","operation_description"]:
+                    gb.configure_column(
+                            col,
+                            minWidth=110,
+                            maxWidth=120,
+                            autoSizeColumn=True,
+                            cellStyle={"fontWeight": "bold", "fontSize": "11.5px"},
+                            filter=True
                         )
-                        operator_start = "$gte"
-                        operator_end = "$lt"
-
-                        if date_filter_type == "Range":
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                start_date = st.date_input(
-                                    "De",
-                                    key=f"{filter_key}_start",
-                                    disabled=st.session_state.interface_locked,
-                                )
-                                include_start = st.checkbox(
-                                    "Inclure",
-                                    value=True,
-                                    key=f"{filter_key}_include_start",
-                                    disabled=st.session_state.interface_locked,
-                                )
-                                operator_start = "$gte" if include_start else "$gt"
-                            with col2:
-                                end_date = st.date_input(
-                                    "À",
-                                    key=f"{filter_key}_end",
-                                    disabled=st.session_state.interface_locked,
-                                )
-                                include_end = st.checkbox(
-                                    "Inclure",
-                                    value=False,
-                                    key=f"{filter_key}_include_end",
-                                    disabled=st.session_state.interface_locked,
-                                )
-                                operator_end = "$lte" if include_end else "$lt"
-                            if start_date and end_date:
-                                date_filter = ChromaFilterBuilder.date_range(
-                                    field=filter_key,
-                                    start_date=start_date,
-                                    end_date=end_date,
-                                    operator_start=operator_start,
-                                    operator_end=operator_end,
-                                )
-                                apply_filter(filter_key, date_filter, is_strict)
-                            else:
-                                clear_filter(filter_key)
-                        elif date_filter_type == "Before":
-                            end_date = st.date_input(
-                                "Avant",
-                                key=f"{filter_key}_before",
-                                disabled=st.session_state.interface_locked,
-                            )
-                            include_end = st.checkbox(
-                                "Inclure",
-                                value=False,
-                                key=f"{filter_key}_include_before",
-                                disabled=st.session_state.interface_locked,
-                            )
-                            operator_end = "$lte" if include_end else "$lt"
-                            if end_date:
-                                date_filter = ChromaFilterBuilder.date_range(
-                                    field=filter_key,
-                                    end_date=end_date,
-                                    operator_end=operator_end,
-                                )
-                                apply_filter(filter_key, date_filter, is_strict)
-                            else:
-                                clear_filter(filter_key)
-                        elif date_filter_type == "After":
-                            start_date = st.date_input(
-                                "Après",
-                                key=f"{filter_key}_after",
-                                disabled=st.session_state.interface_locked,
-                            )
-                            include_start = st.checkbox(
-                                "Inclure",
-                                value=True,
-                                key=f"{filter_key}_include_after",
-                                disabled=st.session_state.interface_locked,
-                            )
-                            operator_start = "$gte" if include_start else "$gt"
-                            if start_date:
-                                date_filter = ChromaFilterBuilder.date_range(
-                                    field=filter_key,
-                                    start_date=start_date,
-                                    operator_start=operator_start,
-                                )
-                                apply_filter(filter_key, date_filter, is_strict)
-                            else:
-                                clear_filter(filter_key)
-                        elif date_filter_type == "Exact":
-                            exact_date = st.date_input(
-                                "Date exacte",
-                                key=f"{filter_key}_exact",
-                                disabled=st.session_state.interface_locked,
-                            )
-                            if exact_date:
-                                date_str = exact_date.isoformat()
-                                date_filter = ChromaFilterBuilder.eq(
-                                    field=filter_key, value=date_str
-                                )
-                                apply_filter(filter_key, date_filter, is_strict)
-                            else:
-                                clear_filter(filter_key)
-
-                    elif filter_type == "multiselect":
-                        current_selection = st.session_state.get(f"{filter_key}_select", [])
-                        options = get_linked_options(df, filter_key, st.session_state.active_filters, current_selection)
-                        selected = st.multiselect(
-                            "",
-                            options=options,
-                            default=current_selection,
-                            key=f"{filter_key}_select",
-                            disabled=st.session_state.interface_locked
-                        )
-                        filter_mode = st.radio(
-                            "Mode",
-                            ["Inclure", "Exclure"],
-                            horizontal=True,
-                            key=f"{filter_key}_mode",
-                            disabled=st.session_state.interface_locked,
-                        )
-                        inner_operator = st.radio(
-                            "Opérateur",
-                            ["OU", "ET"],
-                            horizontal=True,
-                            key=f"{filter_key}_operator",
-                            disabled=st.session_state.interface_locked,
-                        )
-                        if selected:
-                            if filter_mode == "Inclure":
-                                if inner_operator == "OU":
-                                    multiselect_filter = ChromaFilterBuilder.in_list(
-                                        field=filter_key, values=selected
-                                    )
-                                else:
-                                    conditions = [
-                                        ChromaFilterBuilder.eq(
-                                            field=filter_key, value=value
-                                        )
-                                        for value in selected
-                                    ]
-                                    multiselect_filter = ChromaFilterBuilder.and_filter(
-                                        conditions=conditions
-                                    )
-                            else:  # Exclure
-                                if inner_operator == "OU":
-                                    multiselect_filter = ChromaFilterBuilder.not_in_list(
-                                        field=filter_key, values=selected
-                                    )
-                                else:
-                                    conditions = [
-                                        ChromaFilterBuilder.ne(
-                                            field=filter_key, value=value
-                                        )
-                                        for value in selected
-                                    ]
-                                    multiselect_filter = ChromaFilterBuilder.and_filter(
-                                        conditions=conditions
-                                    )
-                            apply_filter(filter_key, multiselect_filter, is_strict)
-                        else:
-                            clear_filter(filter_key)
-
-                    elif filter_type == "selectbox":
-                        current_selection = st.session_state.get(f"{filter_key}_select", "")
-                        options = get_linked_options(df, filter_key, st.session_state.active_filters, [current_selection] if current_selection else [])
-                        display_options = [""] + options
-                        selected = st.selectbox(
-                            "",
-                            options=display_options,
-                            index=display_options.index(current_selection) if current_selection in display_options else 0,
-                            key=f"{filter_key}_select",
-                            disabled=st.session_state.interface_locked
-                        )
-                        filter_mode = st.radio(
-                            "Mode",
-                            ["Égal", "Différent"],
-                            horizontal=True,
-                            key=f"{filter_key}_mode",
-                            disabled=st.session_state.interface_locked,
-                        )
-                        if selected:
-                            if filter_mode == "Égal":
-                                selectbox_filter = ChromaFilterBuilder.eq(
-                                    field=filter_key, value=selected
-                                )
-                            else:
-                                selectbox_filter = ChromaFilterBuilder.ne(
-                                    field=filter_key, value=selected
-                                )
-                            apply_filter(filter_key, selectbox_filter, is_strict)
-                        else:
-                            clear_filter(filter_key)
-
-                    elif filter_type == "text":
-                        text_value = st.text_input(
-                            "",
-                            key=f"{filter_key}_text",
-                            disabled=st.session_state.interface_locked
-                        )
-                        comparison_operator = st.selectbox(
-                            "Opérateur",
-                            ["Equals", "Not equals", "Contains", "Does not contain"],
-                            key=f"{filter_key}_comparison",
-                            disabled=st.session_state.interface_locked
-                        )
-                        if text_value:
-                            if comparison_operator == "Equals":
-                                text_filter = ChromaFilterBuilder.eq(
-                                    field=filter_key, value=text_value
-                                )
-                            elif comparison_operator == "Not equals":
-                                text_filter = ChromaFilterBuilder.ne(
-                                    field=filter_key, value=text_value
-                                )
-                            elif comparison_operator == "Contains":
-                                text_filter = {filter_key: {"$contains": text_value}}
-                            elif comparison_operator == "Does not contain":
-                                text_filter = {filter_key: {"$not_contains": text_value}}
-                            apply_filter(filter_key, text_filter, is_strict)
-                        else:
-                            clear_filter(filter_key)
-
-        # Recherche plein texte en expander rabattable
-        with st.expander("🔍 Recherche plein texte", expanded=False):
-            colA, colB = st.columns(2)
-            with colA:
-                st.write("Contient :")
-                for term in st.session_state.get("contains_terms", []):
-                    st.markdown(f"<span style='background:#FF6A13;color:white;padding:2px 8px;border-radius:10px;margin-right:2px'>{term}</span>", unsafe_allow_html=True)
-                if st.button("Vider", key="clear_all_contains"):
-                    st.session_state.contains_terms = []
-                    st.rerun()
-                new_contains = st.text_input("Ajouter à contenir", key="new_contains_term")
-                if st.button("Ajouter", key="add_contains_term") and new_contains.strip():
-                    st.session_state.contains_terms.append(new_contains.strip())
-                    st.rerun()
-            with colB:
-                st.write("Ne contient PAS :")
-                for term in st.session_state.get("not_contains_terms", []):
-                    st.markdown(f"<span style='background:#FF6A13;color:white;padding:2px 8px;border-radius:10px;margin-right:2px'>{term}</span>", unsafe_allow_html=True)
-                if st.button("Vider", key="clear_all_not_contains"):
-                    st.session_state.not_contains_terms = []
-                    st.rerun()
-                new_not_contains = st.text_input("Ajouter à exclure", key="new_not_contains_term")
-                if st.button("Ajouter", key="add_not_contains_term") and new_not_contains.strip():
-                    st.session_state.not_contains_terms.append(new_not_contains.strip())
-                    st.rerun()
-
-        build_document_filter()
-
-        # -- Combine metadata filters --
-        if st.session_state.active_filters:
-            combined_filters = list(st.session_state.active_filters.values())
-            if len(combined_filters) > 1:
-                if filter_grouping == "AND":
-                    complex_filter = ChromaFilterBuilder.and_filter(
-                        conditions=combined_filters
+                elif col == content_col_name:
+                    gb.configure_column(
+                        col,
+                        autoSizeColumn=True,
+                        minWidth=250,
+                        maxWidth=1000,
+                        flex=1,
+                        wrapText=True,
+                        autoHeight=True,
+                        cellStyle=cell_style,
+                        filter=True,
                     )
                 else:
-                    complex_filter = ChromaFilterBuilder.or_filter(
-                        conditions=combined_filters
-                    )
-            else:
-                complex_filter = combined_filters[0]
-            st.session_state.metadata_filters = complex_filter
-        else:
-            st.session_state.metadata_filters = None
+                    avg_length = df[col].astype(str).apply(len).mean()
+                    if avg_length < 15:
+                        gb.configure_column(
+                            col,
+                            autoSizeColumn=True,
+                            minWidth=80,
+                            maxWidth=150,
+                            flex=0.5,
+                            cellStyle=cell_style,
+                            filter=True,
+                        )
+                    elif avg_length < 50:
+                        gb.configure_column(
+                            col,
+                            autoSizeColumn=True,
+                            minWidth=120,
+                            maxWidth=300,
+                            flex=0.8,
+                            wrapText=True,
+                            cellStyle=cell_style,
+                            filter=True,
+                        )
+                    else:
+                        gb.configure_column(
+                            col,
+                            autoSizeColumn=True,
+                            minWidth=150,
+                            maxWidth=500,
+                            flex=0.9,
+                            wrapText=True,
+                            autoHeight=True,
+                            cellStyle=cell_style,
+                            filter=True,
+                        )
 
-       
-
-        # if st.button("♻️ Réinitialiser tous les filtres", key="reset_all", help="Enlève tous les filtres actifs", type="primary"):
-            # for k in [
-                # "active_filters", "loose_filters",
-                # "document_filters", "contains_terms",
-                # "not_contains_terms", "where_document", "metadata_filters"
-            # ]:
-                # if k in st.session_state:
-                    # if isinstance(st.session_state[k], dict):
-                        # st.session_state[k].clear()
-                    # elif isinstance(st.session_state[k], list):
-                        # st.session_state[k].clear()
-                    # else:
-                        # del st.session_state[k]
-            # st.rerun()
-
-   
-
-
-def apply_filter(filter_key, filter_value, is_strict):
-    if not is_strict:
-        st.session_state.active_filters[filter_key] = ChromaFilterBuilder.or_filter(
-            [filter_value, ChromaFilterBuilder.eq(field=filter_key, value="")]
-        )
-    else:
-        st.session_state.active_filters[filter_key] = filter_value
-
-def clear_filter(filter_key):
-    if filter_key in st.session_state.active_filters:
-        del st.session_state.active_filters[filter_key]
-
-def build_document_filter():
-    contains_terms = st.session_state.get("contains_terms", [])
-    not_contains_terms = st.session_state.get("not_contains_terms", [])
-
-    if not contains_terms and not not_contains_terms:
-        st.session_state.where_document = None
-        return
-
-    contains_filter = None
-    if contains_terms:
-        if len(contains_terms) == 1:
-            contains_filter = {"$contains": contains_terms[0]}
-        else:
-            contains_operator = st.session_state.get(
-                "contains_operator", "AND (tous présents)"
-            )
-            if contains_operator.startswith("AND"):
-                contains_filter = {
-                    "$and": [{"$contains": term} for term in contains_terms]
+            custom_css = {
+                ".ag-header-cell-label": {
+                    "font-weight": "bold",
+                    "color": "#FF6A13",
+                    "font-size": f"{font_size+2}px"
                 }
-            else:
-                contains_filter = {
-                    "$or": [{"$contains": term} for term in contains_terms]
-                }
-    not_contains_filter = None
-    if not_contains_terms:
-        if len(not_contains_terms) == 1:
-            not_contains_filter = {"$not_contains": not_contains_terms[0]}
-        else:
-            not_contains_operator = st.session_state.get(
-                "not_contains_operator", "AND (aucun ne doit être présent)"
-            )
-            if not_contains_operator.startswith("AND"):
-                not_contains_filter = {
-                    "$and": [{"$not_contains": term} for term in not_contains_terms]
-                }
-            else:
-                not_contains_filter = {
-                    "$or": [{"$not_contains": term} for term in not_contains_terms]
-                }
-    if contains_filter and not_contains_filter:
-        doc_filter_top_operator = st.session_state.get(
-            "doc_filter_top_operator", "AND (les deux conditions)"
-        )
-        if doc_filter_top_operator.startswith("AND"):
-            st.session_state.where_document = {
-                "$and": [contains_filter, not_contains_filter]
             }
-        else:
-            st.session_state.where_document = {
-                "$or": [contains_filter, not_contains_filter]
+
+            gb.configure_grid_options(
+                domLayout="normal",
+                rowHeight=int(font_size * 3.5),
+                autoSizeColumns=True,
+                suppressColumnVirtualisation=False,
+                suppressSizeToFit=False,
+                headerHeight=int(font_size * 2),
+                defaultColDef={"cellStyle": cell_style},
+                enableFilter=True,
+                minWidth=80,
+                maxWidth=150
+            )
+            gb.configure_default_column(
+                editable=False,
+                groupable=True,
+                sortable=True,
+                filterable=True,
+                resizable=True,
+                autoSizeColumn=True,
+                minWidth=80,
+                maxWidth=150
+            )
+
+            grid_options = gb.build()
+            grid_key = f"grid_{key_suffix}"
+
+            grid_response = AgGrid(
+                df,
+                gridOptions=grid_options,
+                data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+                update_mode=GridUpdateMode.SELECTION_CHANGED | GridUpdateMode.VALUE_CHANGED,
+                fit_columns_on_grid_load=True,
+                theme="streamlit",
+                enable_enterprise_modules=False,
+                height=estimated_height,
+                custom_css=custom_css,
+                key=grid_key,
+                allow_unsafe_jscode=True,
+            )
+
+            filtered_data = grid_response["data"]
+            filtered_df = pd.DataFrame(filtered_data)
+            if "_row_index" in filtered_df.columns:
+                filtered_df = filtered_df.drop(columns=["_row_index"])
+            csv = filtered_df.to_csv(
+                index=False, quoting=2, quotechar='"', sep=";"
+            ).encode()
+            b64 = base64.b64encode(csv).decode()
+            href = (
+                f'<a href="data:file/csv;base64,{b64}" download="exported_data.csv" '
+                f'class="download-button">Export to CSV</a>'
+            )
+            st.markdown("""
+            <style>
+            .download-button {
+                display: inline-block;
+                padding: 0.5em 1em;
+                margin-top: 10px;
+                color: white;
+                background-color: #FF6A13;
+                border-radius: 0.25rem;
+                text-decoration: none;
+                font-weight: bold;
+                text-align: center;
             }
-    elif contains_filter:
-        st.session_state.where_document = contains_filter
-    elif not_contains_filter:
-        st.session_state.where_document = not_contains_filter
+            .download-button:hover {
+                background-color: #e65c00;
+                color: white;
+            }
+            </style>
+            """, unsafe_allow_html=True)
+            st.markdown(href, unsafe_allow_html=True)
+
+        with details_col:
+            selected_rows = grid_response.get("selected_rows", None)
+            if selected_rows is not None and len(selected_rows) > 0:
+                selected_row = selected_rows.iloc[0] if hasattr(selected_rows, 'iloc') else selected_rows[0]
+                row_index = selected_row.get("_row_index")
+                if row_index is not None:
+                    row_index = int(row_index)
+                    if (
+                        has_table_dict
+                        and 0 <= row_index < len(df)
+                        and pd.notna(df.loc[row_index, "table_dict"])
+                        and df.loc[row_index, "table_dict"] != ""
+                    ):
+                        with st.expander("View Table Data", expanded=False):
+                            try:
+                                table_dict_str = df.loc[row_index, "table_dict"]
+                                if isinstance(table_dict_str, str):
+                                    try:
+                                        table_dict_str = table_dict_str.replace("'", '"')
+                                        table_data = json.loads(table_dict_str)
+                                    except Exception:
+                                        table_data = ast.literal_eval(table_dict_str)
+                                else:
+                                    table_data = table_dict_str
+                                try:
+                                    table_df = pd.DataFrame(table_data)
+                                    st.dataframe(table_df, use_container_width=True)
+                                except Exception as df_err:
+                                    st.warning(
+                                        f"Could not convert to DataFrame: {df_err}"
+                                    )
+                                    st.json(table_data)
+                            except Exception as e:
+                                st.error(f"Error processing table data: {e}")
+                                st.code(str(df.loc[row_index, "table_dict"])[:500])
+                    if (
+                        has_image_array
+                        and 0 <= row_index < len(df)
+                        and pd.notna(df.loc[row_index, "image_array"])
+                        and df.loc[row_index, "image_array"] != ""
+                    ):
+                        with st.expander("View Image", expanded=False):
+                            try:
+                                image_data = df.loc[row_index, "image_array"]
+                                if isinstance(image_data, str):
+                                    try:
+                                        image_data = image_data.replace("'", '"')
+                                        image_array = json.loads(image_data)
+                                        st.image(np.array(image_array))
+                                    except Exception:
+                                        try:
+                                            image_bytes = base64.b64decode(image_data)
+                                            image = Image.open(BytesIO(image_bytes))
+                                            st.image(image)
+                                        except Exception as img_err:
+                                            st.warning(
+                                                f"Could not parse image data: {img_err}"
+                                            )
+                                            st.code(image_data[:500])
+                                elif isinstance(image_data, (list, np.ndarray)):
+                                    st.image(np.array(image_data))
+                                else:
+                                    st.warning(
+                                        f"Unsupported image data format: {type(image_data)}"
+                                    )
+                            except Exception as e:
+                                st.error(f"Error displaying image: {e}")
+                                st.code(str(df.loc[row_index, "image_array"])[:500])
+    return grid_response
