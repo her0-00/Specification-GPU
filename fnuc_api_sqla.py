@@ -1,427 +1,200 @@
-import ast
-import base64
-import json
-from io import BytesIO
-from typing import Any, Dict
-
-import numpy as np
-import pandas as pd
 import streamlit as st
-from PIL import Image
-from st_aggrid import (
-    AgGrid,
-    DataReturnMode,
-    GridOptionsBuilder,
-    GridUpdateMode
-)
+import base64
+from components.conversation import clear_conversation, render_conversation
+from components.message_input import render_message_input
+from utils.config import load_config
 
-def convert_timestamps_to_iso(df):
-    for column in df.columns:
-        if "Date" in column:
-            df[column] = pd.to_datetime(df[column], unit='ms').dt.strftime('%Y-%m-%d')
-    return df
+def get_base64_of_bin_file(bin_file):
+    with open(bin_file, 'rb') as f:
+        data = f.read()
+    return base64.b64encode(data).decode()
 
-def create_and_display_grid(
-    context_data: str,
-    key_suffix: str,
-    min_height: int = 400,
-    max_height: int = 400,
-    page_size: int = 20,
-    content_col_name: str = "Content",
-    font_size: int = 9,
-) -> Dict[str, Any]:
-    if not context_data or (
-        isinstance(context_data, str)
-        and context_data.strip().lower() in ["", "null", "none"]
-    ):
-        st.markdown("No data to display.")
-        return {}
+def main():
+    st.set_page_config(
+        page_title="DA Search",
+        page_icon="🔎",
+        layout="wide",
+    )
 
-    try:
-        if isinstance(context_data, str):
-            try:
-                cleaned_data = context_data.replace("'", '"')
-                data = json.loads(cleaned_data)
-            except Exception:
-                data = ast.literal_eval(context_data)
-        else:
-            data = context_data
-    except Exception as e:
-        st.error(f"Error evaluating context_data: {e}")
-        st.error(
-            f"Raw data: {context_data[:200]}..."
-            if isinstance(context_data, str)
-            else "Non-string data"
-        )
-        return {}
+    load_config()
+    img_base64_1 = get_base64_of_bin_file('utils/fond_app.png')
+    img_base64_2 = get_base64_of_bin_file('utils/fond_ciel.png')
 
-    try:
-        df = pd.DataFrame.from_dict(data)
-        try:
-            df = convert_timestamps_to_iso(df)
-        except Exception:
-            pass
-        try:
-            if 'relevance_score' in df.columns:
-                df['relevance_score'] = (df['relevance_score'].astype(float) * 100).round(2).astype(str) + '%'
-                df = df.rename(columns={"Operateur responsable": "OP"})
-                df = df.rename(columns={"relevance_score": "Score"})
-        except Exception:
-            pass
-        fixed_order = [
-            'Code DA',
-            'OP',
-            'Score',
-            'Similarité',
-            'Code article',
-            'Libelle article',
-            'Content'
-        ]
-        
-        remaining_cols = sorted([col for col in df.columns if col not in fixed_order])
-        if 'Score' in df.columns and (df['Score'] == '').any():
-            cols = list(df.columns)
-            cols.remove("Score")
-            df = df[cols]
-        final_order = fixed_order + remaining_cols
-        df = df[[col for col in final_order if col in df.columns]]
-    except Exception as e:
-        st.error(f"Error creating DataFrame: {e}")
-        st.json(data)
-        return {}
+    st.markdown(f"""
+    <style>
+    .search-bar-wide {{
+        background:url("data:image/png;base64,{img_base64_1}") center/cover no-repeat;
+        padding: 34px 0 22px 0;
+        border-radius: 16px;
+        margin-bottom: 28px;
+        box-shadow: 0 4px 18px rgba(0,0,0,0.08);
+        text-align: center;
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        width: 100%;
+    }}
+    .search-bar-wide h1 {{
+        color: #fff;
+        font-size: 2.1em;
+        font-weight: 800;
+        text-shadow: 0 1px 8px #00205B99;
+        margin: 0 0 8px 0;
+        letter-spacing: 1.1px;
+    }}
+    .large-search-container {{
+        display: flex;
+        justify-content: center;
+        margin-top: 16px;
+        margin-bottom: 0;
+    }}
+    .large-search-box {{
+        width: 84vw;
+        max-width: 1100px;
+        display: flex;
+        align-items: center;
+        gap: 0.5em;
+        background: rgba(255,255,255,0.95);
+        border-radius: 13px;
+        box-shadow: 0 2px 8px #00205B15;
+        padding: 0.8em 1.2em;
+    }}
+    .large-search-box input[type="text"] {{
+        font-size: 1.15em;
+        width: 100%;
+        border: none;
+        outline: none;
+        background: transparent;
+        color: #1C1C1C;
+        padding: 0.7em 0.6em;
+    }}
+    .objectives {{
+        background:url("data:image/png;base64,{img_base64_2}") center/cover no-repeat;
+        border-radius: 12px;
+        padding: 18px 28px;
+        margin-bottom: 20px;
+        color: #00205B;
+        box-shadow: 0 1px 5px rgba(0,0,0,0.07);
+    }}
+    .stApp {{
+        background: #F3F6FA;
+        color: #1C1C1C;
+        font-family: "Segoe UI", "Inter", sans-serif;
+    }}
+    .stButton>button {{
+        background: linear-gradient(90deg,#1976D2, #00A9E0 90%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 0.6em 1.4em;
+        font-weight: bold;
+        font-size: 1em;
+    }}
+    .stButton>button:hover {{
+        background: #1976D2;
+    }}
+    /* Nouveau style pour le bloc flottant effacer */
+    .effacer-float-bloc {{
+        position: fixed;
+        bottom: 32px;
+        right: 32px;
+        z-index: 999;
+        background: #fff;
+        border-radius: 18px;
+        box-shadow: 0 4px 22px rgba(0,32,91,0.11), 0 0px 0px #00205b09;
+        padding: 22px 28px 18px 28px;
+        display: flex;
+        align-items: center;
+        min-width: 200px;
+        justify-content: center;
+        transition: box-shadow 0.2s;
+    }}
+    .effacer-float-bloc:hover {{
+        box-shadow: 0 6px 28px rgba(0,32,91,0.16);
+    }}
+    .effacer-float-bloc button {{
+        background: linear-gradient(90deg,#e53935,#ff6a13 80%);
+        color: #fff !important;
+        border: none;
+        border-radius: 7px;
+        font-weight: bold;
+        font-size: 1.09em;
+        padding: 0.7em 1.6em;
+        box-shadow: 0 2px 7px #e5393530;
+        transition: background 0.15s;
+    }}
+    .effacer-float-bloc button:hover {{
+        background: #e53935 !important;
+        color: #fff !important;
+    }}
+    </style>
+    """, unsafe_allow_html=True)
 
-    has_table_dict = "table_dict" in df.columns
-    has_image_array = "image_array" in df.columns
-    df["_row_index"] = range(len(df))
+    for key, default in {
+        "messages": [],
+        "messages_llm": [],
+        "filters": [],
+        "interface_locked": False,
+        "processing_query": False,
+        "needs_processing": False,
+        "query_to_process": "",
+        "current_query_type": "Specific Question"
+    }.items():
+        if key not in st.session_state:
+            st.session_state[key] = default
 
-    grid_container = st.container()
+    # --- LARGE SEARCH BAR ALWAYS ON TOP ---
+    st.markdown("""
+    <div class="search-bar-wide">
+        <h1>Recherche intelligente d'anomalies (DA)</h1>
+    """, unsafe_allow_html=True)
+    render_message_input()
+    st.markdown("""
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    with grid_container:
-        grid_col, details_col = st.columns([40, 1])
-        with grid_col:
-            row_count = len(df)
-            estimated_height = min(max(row_count * 60 + 100, min_height), max_height)
-            if row_count > page_size:
-                visible_rows = min(page_size, row_count)
-                estimated_height = min(visible_rows * 60 + 100, max_height)
-                
-                      
-            # Fonction pour créer une barre de progression textuelle
-            def render_bar(val, length=10):
-                try:
-                    val = float(val.strip('%')) / 100  # Convertir "85%" → 0.85
-                except:
-                    return "░" * length
-                filled = int(val * length)
-                empty = length - filled
-                return "█" * filled + "░" * empty
+    # --- CONVERSATION / RESULTATS ---
+    with st.container():
+        st.markdown("#### 💬 Résultats")
+        render_conversation()
 
-            # Appliquer la barre de progression dans une nouvelle colonne
-            try:
-                df['Similarité'] = df['Score'].apply(render_bar)
-                # Réorganiser les colonnes pour placer 'Similarité' en 3ᵉ position
-                cols = list(df.columns)
-                if 'Similarité' in cols:
-                    cols.remove('Similarité')
-                    cols.insert(3, 'Similarité')
-                    df = df[cols]
-            except Exception as e:
-                print("Erreur lors de la génération de la barre :", e)
+    # --- OBJECTIFS EN BAS ---
+    with st.expander("🎯 Objectifs de l’outil", expanded=False):
+        st.markdown("""
+        <ul>
+            <li>🔍 <strong>Recherche rapide</strong> de cas similaires (description ou mot-clé).</li>
+            <li>🧠 <strong>Inspiration via cas déjà résolus</strong> pour accélérer le diagnostic.</li>
+            <li>🗂️ <strong>Exploration historique</strong> via filtres (programme, ligne, dates...)</li>
+            <li>✏️ <strong>Recherche libre</strong> sur toute la base depuis 2020.</li>
+            <li>⏳ <strong>Réduction des délais</strong> d’analyse grâce à l’IA et l’ergonomie.</li>
+        </ul>
+        """)
 
+    # --- EFFACER TJR ACCESSIBLE DANS UN BLOC BLANC FLOTTANT ---
+    st.markdown("""
+    <div class="effacer-float-bloc">
+    """, unsafe_allow_html=True)
+    if st.button("🧹 Réinitialiser la conversation", key="clear_btn", disabled=st.session_state.interface_locked):
+        clear_conversation()
+    st.markdown("</div>", unsafe_allow_html=True)
 
+    # Overlay de “traitement en cours”
+    if st.session_state.interface_locked:
+        st.markdown("""
+            <div class="overlay">
+                <div class="overlay-content">
+                    <h3>⏳ Traitement en cours</h3>
+                    <p>Merci de patienter pendant le traitement de votre requête...</p>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
 
-            gb = GridOptionsBuilder.from_dataframe(df)
+    # Rafraîchissement si déverrouillage
+    if st.session_state.get("_previous_lock_state", False) and not st.session_state.interface_locked:
+        st.session_state._previous_lock_state = False
+        st.rerun()
+    st.session_state._previous_lock_state = st.session_state.interface_locked
 
-            cell_style = {
-                "font-size": f"{font_size}px",
-                "line-height": f"{int(font_size * 1.2)}px",
-                "padding": "4px",
-            }
-
-            gb.configure_selection("single", use_checkbox=True)
-            if has_table_dict:
-                gb.configure_column("table_dict", hide=True)
-            if has_image_array:
-                gb.configure_column("image_array", hide=True)
-            gb.configure_column("_row_index", hide=True)
-
-            for col in df.columns:
-                if col in ["table_dict", "image_array", "_row_index"]:
-                    continue
-                elif col == "Score":
-                    gb.configure_column(
-                        col,
-                        autoSizeColumn=True,
-                        minWidth=80,
-                        maxWidth=150,
-                        cellRenderer="""
-                            function(params) {
-                                const val = params.value || '';
-                                let score = 0;
-                                if(val.includes('%')) {score = parseFloat(val.replace('%',''));}
-                                else {score = parseFloat(val);}
-                                let color = '#ff4136';
-                                if(score >= 70) color = '#2ecc40';
-                                else if(score >= 40) color = '#ffae42';
-                                return `<span style='font-size:18px; color:${color}; vertical-align:middle;'>●</span>
-                                        <span style='color:${color}; font-weight:bold;'>${val}</span>`;
-                            }
-                        """,
-                        filter=True,
-                        cellStyle={"fontWeight": "bold", "fontSize": "13px"}
-                    )
-                elif col == "Similarité":
-                    gb.configure_column(
-                        col,
-                        autoSizeColumn=True,
-                        minWidth=100,
-                        maxWidth=150,
-                        cellStyle={"fontWeight": "bold", "color": "#3f51b5", "fontSize": "12px"},
-                        filter=True
-                    )
-                elif col == "Libelle article" :
-                    gb.configure_column(
-                        col,
-                        minWidth=200,
-                        maxWidth=220,
-                        autoSizeColumn=True,
-                        cellStyle={"fontWeight": "bold", "fontSize": "11.5px"},
-                        filter=True
-                    )
-                    
-                elif col  == "retouche_description_methodes":
-                    gb.configure_column(
-                        col,
-                        minWidth=220,
-                        maxWidth=260,
-                        autoSizeColumn=True,
-                        cellStyle={"fontWeight": "bold", "fontSize": "11.5px"},
-                        filter=True
-                    )
-                    
-                elif col  == "retouche_type_description":
-                    gb.configure_column(
-                        col,
-                        minWidth=220,
-                        maxWidth=260,
-                        autoSizeColumn=True,
-                        cellStyle={"fontWeight": "bold", "fontSize": "11.5px"},
-                        filter=True
-                    )
-                elif col =="OP":
-                    gb.configure_column(
-                            col,
-                            minWidth=80,
-                            maxWidth=120,
-                            autoSizeColumn=True,
-                            cellStyle={"fontWeight": "bold", "fontSize": "11.5px"},
-                            filter=True
-                        )
-                        
-                elif col in ["Code DA","Code article","operation_description"]:
-                    gb.configure_column(
-                            col,
-                            minWidth=110,
-                            maxWidth=120,
-                            autoSizeColumn=True,
-                            cellStyle={"fontWeight": "bold", "fontSize": "11.5px"},
-                            filter=True
-                        )
-                elif col == content_col_name:
-                    gb.configure_column(
-                        col,
-                        autoSizeColumn=True,
-                        minWidth=250,
-                        maxWidth=1000,
-                        flex=1,
-                        wrapText=True,
-                        autoHeight=True,
-                        cellStyle=cell_style,
-                        filter=True,
-                    )
-                else:
-                    avg_length = df[col].astype(str).apply(len).mean()
-                    if avg_length < 15:
-                        gb.configure_column(
-                            col,
-                            autoSizeColumn=True,
-                            minWidth=80,
-                            maxWidth=150,
-                            flex=0.5,
-                            cellStyle=cell_style,
-                            filter=True,
-                        )
-                    elif avg_length < 50:
-                        gb.configure_column(
-                            col,
-                            autoSizeColumn=True,
-                            minWidth=120,
-                            maxWidth=300,
-                            flex=0.8,
-                            wrapText=True,
-                            cellStyle=cell_style,
-                            filter=True,
-                        )
-                    else:
-                        gb.configure_column(
-                            col,
-                            autoSizeColumn=True,
-                            minWidth=150,
-                            maxWidth=500,
-                            flex=0.9,
-                            wrapText=True,
-                            autoHeight=True,
-                            cellStyle=cell_style,
-                            filter=True,
-                        )
-
-            custom_css = {
-                ".ag-header-cell-label": {
-                    "font-weight": "bold",
-                    "color": "#FF6A13",
-                    "font-size": f"{font_size+2}px"
-                }
-            }
-
-            gb.configure_grid_options(
-                domLayout="normal",
-                rowHeight=int(font_size * 3.5),
-                autoSizeColumns=True,
-                suppressColumnVirtualisation=False,
-                suppressSizeToFit=False,
-                headerHeight=int(font_size * 2),
-                defaultColDef={"cellStyle": cell_style},
-                enableFilter=True,
-                minWidth=80,
-                maxWidth=150
-            )
-            gb.configure_default_column(
-                editable=False,
-                groupable=True,
-                sortable=True,
-                filterable=True,
-                resizable=True,
-                autoSizeColumn=True,
-                minWidth=80,
-                maxWidth=150
-            )
-
-            grid_options = gb.build()
-            grid_key = f"grid_{key_suffix}"
-
-            grid_response = AgGrid(
-                df,
-                gridOptions=grid_options,
-                data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
-                update_mode=GridUpdateMode.SELECTION_CHANGED | GridUpdateMode.VALUE_CHANGED,
-                fit_columns_on_grid_load=True,
-                theme="streamlit",
-                enable_enterprise_modules=False,
-                height=estimated_height,
-                custom_css=custom_css,
-                key=grid_key,
-                allow_unsafe_jscode=True,
-            )
-
-            filtered_data = grid_response["data"]
-            filtered_df = pd.DataFrame(filtered_data)
-            if "_row_index" in filtered_df.columns:
-                filtered_df = filtered_df.drop(columns=["_row_index"])
-            csv = filtered_df.to_csv(
-                index=False, quoting=2, quotechar='"', sep=";"
-            ).encode()
-            b64 = base64.b64encode(csv).decode()
-            href = (
-                f'<a href="data:file/csv;base64,{b64}" download="exported_data.csv" '
-                f'class="download-button">Export to CSV</a>'
-            )
-            st.markdown("""
-            <style>
-            .download-button {
-                display: inline-block;
-                padding: 0.5em 1em;
-                margin-top: 10px;
-                color: white;
-                background-color: #FF6A13;
-                border-radius: 0.25rem;
-                text-decoration: none;
-                font-weight: bold;
-                text-align: center;
-            }
-            .download-button:hover {
-                background-color: #e65c00;
-                color: white;
-            }
-            </style>
-            """, unsafe_allow_html=True)
-            st.markdown(href, unsafe_allow_html=True)
-
-        with details_col:
-            selected_rows = grid_response.get("selected_rows", None)
-            if selected_rows is not None and len(selected_rows) > 0:
-                selected_row = selected_rows.iloc[0] if hasattr(selected_rows, 'iloc') else selected_rows[0]
-                row_index = selected_row.get("_row_index")
-                if row_index is not None:
-                    row_index = int(row_index)
-                    if (
-                        has_table_dict
-                        and 0 <= row_index < len(df)
-                        and pd.notna(df.loc[row_index, "table_dict"])
-                        and df.loc[row_index, "table_dict"] != ""
-                    ):
-                        with st.expander("View Table Data", expanded=False):
-                            try:
-                                table_dict_str = df.loc[row_index, "table_dict"]
-                                if isinstance(table_dict_str, str):
-                                    try:
-                                        table_dict_str = table_dict_str.replace("'", '"')
-                                        table_data = json.loads(table_dict_str)
-                                    except Exception:
-                                        table_data = ast.literal_eval(table_dict_str)
-                                else:
-                                    table_data = table_dict_str
-                                try:
-                                    table_df = pd.DataFrame(table_data)
-                                    st.dataframe(table_df, use_container_width=True)
-                                except Exception as df_err:
-                                    st.warning(
-                                        f"Could not convert to DataFrame: {df_err}"
-                                    )
-                                    st.json(table_data)
-                            except Exception as e:
-                                st.error(f"Error processing table data: {e}")
-                                st.code(str(df.loc[row_index, "table_dict"])[:500])
-                    if (
-                        has_image_array
-                        and 0 <= row_index < len(df)
-                        and pd.notna(df.loc[row_index, "image_array"])
-                        and df.loc[row_index, "image_array"] != ""
-                    ):
-                        with st.expander("View Image", expanded=False):
-                            try:
-                                image_data = df.loc[row_index, "image_array"]
-                                if isinstance(image_data, str):
-                                    try:
-                                        image_data = image_data.replace("'", '"')
-                                        image_array = json.loads(image_data)
-                                        st.image(np.array(image_array))
-                                    except Exception:
-                                        try:
-                                            image_bytes = base64.b64decode(image_data)
-                                            image = Image.open(BytesIO(image_bytes))
-                                            st.image(image)
-                                        except Exception as img_err:
-                                            st.warning(
-                                                f"Could not parse image data: {img_err}"
-                                            )
-                                            st.code(image_data[:500])
-                                elif isinstance(image_data, (list, np.ndarray)):
-                                    st.image(np.array(image_data))
-                                else:
-                                    st.warning(
-                                        f"Unsupported image data format: {type(image_data)}"
-                                    )
-                            except Exception as e:
-                                st.error(f"Error displaying image: {e}")
-                                st.code(str(df.loc[row_index, "image_array"])[:500])
-    return grid_response
+if __name__ == "__main__":
+    main()
